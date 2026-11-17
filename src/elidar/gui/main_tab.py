@@ -391,9 +391,6 @@ class MainTab(QWidget):
         self.clean_check.setChecked(True)
         form.addRow("Clean Data:", self.clean_check)
 
-        self.ground_check = QCheckBox()
-        form.addRow("Ground Only:", self.ground_check)
-
         self.radius_spin = QDoubleSpinBox()
         self.radius_spin.setRange(0.0001, 0.1)
         self.radius_spin.setDecimals(4)
@@ -563,7 +560,7 @@ class MainTab(QWidget):
         return QueryOptions(
             clean_data=self.clean_check.isChecked(),
             colorscale=self.color_combo.currentData(),
-            filter_ground=self.ground_check.isChecked(),
+            filter_ground=False,
             query_radius_deg=self.radius_spin.value(),
             zoom_scale=self.zoom_spin.value(),
             force_unit=self.unit_combo.currentData(),
