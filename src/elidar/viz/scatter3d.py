@@ -555,8 +555,6 @@ class EmbeddedSearch:
     def set_class_visible(self, cls: int, visible: bool) -> None:
         """Toggle visibility of a classification's points.
 
-        Re-renders so the subsample is drawn from only visible classes.
-
         :param cls: Classification code.
         :param visible: Whether to show or hide.
         """
@@ -566,8 +564,10 @@ class EmbeddedSearch:
             self._visible_classes.add(cls)
         else:
             self._visible_classes.discard(cls)
-        if self._active and self._working_cloud is not None:
-            self._render()
+        actor = self._class_actors.get(cls)
+        if actor is not None:
+            actor.SetVisibility(visible)
+            self.plotter.render()
 
     def set_point_size(self, size: int) -> None:
         """Update point size for all actors in place.
@@ -599,70 +599,94 @@ class EmbeddedSearch:
             self._render()
 
     def _render(self) -> None:
-        """Re-render the current working cloud into the plotter."""
-        # Filter to visible classes before subsampling so minority classes
-        # (like Ground at 0.005%) aren't drowned out by the random subsample.
-        render_cloud = self._working_cloud
-        if (
-            self._visible_classes is not None
-            and render_cloud.classification is not None
-        ):
-            vis_mask = np.isin(render_cloud.classification, list(self._visible_classes))
-            if np.any(vis_mask):
-                render_cloud = render_cloud.subset(vis_mask)
+        """Re-render the current working cloud into the plotter.
 
-        self._is_subsampled = render_cloud.n_points > DISPLAY_THRESHOLD
-        if self._is_subsampled:
-            self._display_cloud = _subsample(render_cloud, DISPLAY_THRESHOLD)
-        else:
-            self._display_cloud = render_cloud
-
-        cloud = self._display_cloud
+        Each classification is subsampled independently (up to
+        DISPLAY_THRESHOLD each) so minority classes like Ground are
+        always well-represented. Visibility is set per-actor so
+        toggling is instant with no re-render.
+        """
+        wc = self._working_cloud
         s = self._unit_scale
         unit = "ft" if self._display_feet else "m"
 
-        self._center_lat = float(np.mean(cloud.lat))
-        self._center_lon = float(np.mean(cloud.lon))
+        self._center_lat = float(np.mean(wc.lat))
+        self._center_lon = float(np.mean(wc.lon))
         self._m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(self._center_lat))
-
-        self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
-        self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
-        self._base_plot_z = cloud.z.astype(np.float64) * s
-        plot_z = self._base_plot_z * self._z_exaggeration
 
         self.plotter.disable_picking()
         self.plotter.clear()
         self._polydatas = []
         self._class_actors = {}
 
-        z_min, z_max = float(self._base_plot_z.min()), float(self._base_plot_z.max())
-
         has_classes = (
-            cloud.classification is not None
+            wc.classification is not None
             and len(self._class_cmaps) > 0
         )
 
         if has_classes:
             from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
 
-            unique_classes = sorted(np.unique(cloud.classification))
-            # Show scalar bar on Ground (2) if present, else first class
+            unique_classes = sorted(int(c) for c in np.unique(wc.classification))
+
+            # Subsample each class independently, then concatenate
+            class_clouds: list[tuple[int, PointCloudData]] = []
+            any_subsampled = False
+            for cls in unique_classes:
+                mask = wc.classification == cls
+                cls_cloud = wc.subset(mask)
+                if cls_cloud.n_points > DISPLAY_THRESHOLD:
+                    cls_cloud = _subsample(cls_cloud, DISPLAY_THRESHOLD)
+                    any_subsampled = True
+                class_clouds.append((cls, cls_cloud))
+
+            self._is_subsampled = any_subsampled
+
+            # Merge into display_cloud for pick-index mapping
+            all_arrays = {
+                "x": [], "y": [], "z": [], "lat": [], "lon": [], "cls": [],
+            }
+            for _, cc in class_clouds:
+                all_arrays["x"].append(cc.x)
+                all_arrays["y"].append(cc.y)
+                all_arrays["z"].append(cc.z)
+                all_arrays["lat"].append(cc.lat)
+                all_arrays["lon"].append(cc.lon)
+                all_arrays["cls"].append(cc.classification)
+
+            self._display_cloud = PointCloudData(
+                x=np.concatenate(all_arrays["x"]),
+                y=np.concatenate(all_arrays["y"]),
+                z=np.concatenate(all_arrays["z"]),
+                lat=np.concatenate(all_arrays["lat"]),
+                lon=np.concatenate(all_arrays["lon"]),
+                classification=np.concatenate(all_arrays["cls"]),
+            )
+            cloud = self._display_cloud
+
+            self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
+            self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
+            self._base_plot_z = cloud.z.astype(np.float64) * s
+            plot_z = self._base_plot_z * self._z_exaggeration
+
+            z_min = float(self._base_plot_z.min())
+            z_max = float(self._base_plot_z.max())
+
             scalar_bar_cls = unique_classes[0]
             if 2 in unique_classes:
                 scalar_bar_cls = 2
 
-            for cls in unique_classes:
-                mask = cloud.classification == cls
-                if not np.any(mask):
-                    continue
+            offset = 0
+            for cls, cls_cloud in class_clouds:
+                n = cls_cloud.n_points
+                px = self._display_x[offset:offset + n]
+                py = self._display_y[offset:offset + n]
+                pz = plot_z[offset:offset + n]
+                elev = self._base_plot_z[offset:offset + n]
+                offset += n
 
-                cmap_enum = self._class_cmaps.get(int(cls), DEFAULT_CMAP)
+                cmap_enum = self._class_cmaps.get(cls, DEFAULT_CMAP)
                 cmap = get_colormap(cmap_enum)
-
-                px = self._display_x[mask]
-                py = self._display_y[mask]
-                pz = plot_z[mask]
-                elev = self._base_plot_z[mask]
 
                 pts = np.column_stack([px, py, pz])
                 pd = pv.PolyData(pts)
@@ -677,7 +701,7 @@ class EmbeddedSearch:
                     "render_points_as_spheres": True,
                 }
                 if cls == scalar_bar_cls:
-                    cls_name = ASPRS_CLASSIFICATION_NAMES.get(int(cls), f"Class {cls}")
+                    cls_name = ASPRS_CLASSIFICATION_NAMES.get(cls, f"Class {cls}")
                     add_kwargs["scalar_bar_args"] = {
                         "title": f"Elevation ({unit}) — {cls_name}",
                         "n_labels": 2,
@@ -687,8 +711,25 @@ class EmbeddedSearch:
                     add_kwargs["show_scalar_bar"] = False
 
                 actor = self.plotter.add_points(pd, **add_kwargs)
-                self._class_actors[int(cls)] = actor
+                self._class_actors[cls] = actor
+
+                visible = (
+                    self._visible_classes is None or cls in self._visible_classes
+                )
+                actor.SetVisibility(visible)
         else:
+            self._is_subsampled = wc.n_points > DISPLAY_THRESHOLD
+            if self._is_subsampled:
+                self._display_cloud = _subsample(wc, DISPLAY_THRESHOLD)
+            else:
+                self._display_cloud = wc
+
+            cloud = self._display_cloud
+            self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
+            self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
+            self._base_plot_z = cloud.z.astype(np.float64) * s
+            plot_z = self._base_plot_z * self._z_exaggeration
+
             cmap = get_colormap(self._options.colorscale)
             pts = np.column_stack([self._display_x, self._display_y, plot_z])
             pd = pv.PolyData(pts)
