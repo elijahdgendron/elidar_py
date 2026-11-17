@@ -41,6 +41,7 @@ from elidar.core.types import (
     QueryOptions,
     QueryResult,
     QueryType,
+    SURFACE_CLASSES,
 )
 from elidar.viz.scatter3d import EmbeddedSearch, PickResult
 
@@ -456,15 +457,15 @@ class MainTab(QWidget):
         self._class_color_combos.clear()
         self._class_visible_checks.clear()
 
-        # If ground (2) is present, default to showing only ground.
-        # Otherwise show all classes so the view isn't empty.
-        has_ground = 2 in classifications
+        # Default: show surface classes (Ground + Snow/Ice).
+        # If none are present, show all so the view isn't empty.
+        has_surface = bool(SURFACE_CLASSES & set(classifications))
 
         for cls in sorted(classifications):
             row = QHBoxLayout()
 
             check = QCheckBox()
-            check.setChecked(cls == 2 if has_ground else True)
+            check.setChecked(cls in SURFACE_CLASSES if has_surface else True)
             check.toggled.connect(lambda checked, c=cls: self._on_class_visibility_toggled(c, checked))
             self._class_visible_checks[cls] = check
             row.addWidget(check)
@@ -474,6 +475,7 @@ class MainTab(QWidget):
                 combo.addItem(cs.value.capitalize(), cs)
             default = DEFAULT_CLASS_CMAPS.get(cls, DEFAULT_CMAP)
             combo.setCurrentText(default.value.capitalize())
+            combo.currentIndexChanged.connect(self._on_live_option_changed)
             self._class_color_combos[cls] = combo
             row.addWidget(combo, stretch=1)
 

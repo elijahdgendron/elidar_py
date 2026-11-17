@@ -25,7 +25,7 @@ import numpy as np
 import pyvista as pv
 
 from elidar.core.crs import CrsInfo, make_transformer
-from elidar.core.types import ColorScale, DEFAULT_CMAP, DEFAULT_CLASS_CMAPS, M2FT, PointCloudData, QueryOptions
+from elidar.core.types import ColorScale, DEFAULT_CMAP, DEFAULT_CLASS_CMAPS, M2FT, PointCloudData, QueryOptions, SURFACE_CLASSES
 from elidar.viz.colormaps import get_colormap
 
 logger = logging.getLogger(__name__)
@@ -610,12 +610,16 @@ class EmbeddedSearch:
         s = self._unit_scale
         unit = "ft" if self._display_feet else "m"
 
-        # Center on ground points (class 2) if available so the view
-        # frames the terrain of interest, not the full tile extent.
-        if wc.classification is not None and np.any(wc.classification == 2):
-            ground_mask = wc.classification == 2
-            self._center_lat = float(np.mean(wc.lat[ground_mask]))
-            self._center_lon = float(np.mean(wc.lon[ground_mask]))
+        # Center on surface classes (Ground + Snow/Ice) if available so
+        # the view frames the terrain of interest, not the full tile.
+        if wc.classification is not None:
+            surface_mask = np.isin(wc.classification, list(SURFACE_CLASSES))
+            if np.any(surface_mask):
+                self._center_lat = float(np.mean(wc.lat[surface_mask]))
+                self._center_lon = float(np.mean(wc.lon[surface_mask]))
+            else:
+                self._center_lat = float(np.mean(wc.lat))
+                self._center_lon = float(np.mean(wc.lon))
         else:
             self._center_lat = float(np.mean(wc.lat))
             self._center_lon = float(np.mean(wc.lon))
@@ -679,9 +683,12 @@ class EmbeddedSearch:
             z_min = float(self._base_plot_z.min())
             z_max = float(self._base_plot_z.max())
 
+            # Show scalar bar on first surface class found
             scalar_bar_cls = unique_classes[0]
-            if 2 in unique_classes:
-                scalar_bar_cls = 2
+            for sc in sorted(SURFACE_CLASSES):
+                if sc in unique_classes:
+                    scalar_bar_cls = sc
+                    break
 
             offset = 0
             for cls, cls_cloud in class_clouds:
@@ -775,11 +782,23 @@ class EmbeddedSearch:
             tolerance=0.025,
         )
 
-        # Frame camera on ground actor if it exists, else all actors
-        ground_actor = self._class_actors.get(2)
-        if ground_actor is not None:
-            bounds = ground_actor.GetBounds()
-            self.plotter.reset_camera(bounds=bounds)
+        # Frame camera on surface class actors (Ground + Snow/Ice)
+        surface_bounds = []
+        for sc in SURFACE_CLASSES:
+            actor = self._class_actors.get(sc)
+            if actor is not None:
+                surface_bounds.append(actor.GetBounds())
+        if surface_bounds:
+            # Merge bounds: (xmin, xmax, ymin, ymax, zmin, zmax)
+            merged = [
+                min(b[0] for b in surface_bounds),
+                max(b[1] for b in surface_bounds),
+                min(b[2] for b in surface_bounds),
+                max(b[3] for b in surface_bounds),
+                min(b[4] for b in surface_bounds),
+                max(b[5] for b in surface_bounds),
+            ]
+            self.plotter.reset_camera(bounds=merged)
         else:
             self.plotter.reset_camera()
         self.plotter.camera_position = "xz"

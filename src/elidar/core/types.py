@@ -50,7 +50,11 @@ ASPRS_CLASSIFICATION_NAMES: dict[int, str] = {
     16: "Wire - Connector",
     17: "Bridge Deck",
     18: "High Noise",
+    21: "Snow/Ice",
 }
+
+# Classes that represent the terrain surface (used for view centering)
+SURFACE_CLASSES = {2, 21}
 
 DEFAULT_CLASS_CMAPS: dict[int, ColorScale] = {
     0: ColorScale.GREYSCALE,
@@ -58,6 +62,7 @@ DEFAULT_CLASS_CMAPS: dict[int, ColorScale] = {
     2: ColorScale.TURBO,
     7: ColorScale.WINTER,
     18: ColorScale.WINTER,
+    21: ColorScale.WINTER,
 }
 DEFAULT_CMAP = ColorScale.JET
 US_SURVEY_FOOT_TO_M = 0.30480060960121924
