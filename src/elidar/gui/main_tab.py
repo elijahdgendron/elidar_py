@@ -22,8 +22,10 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
+    QSpinBox,
     QSplitter,
     QStackedWidget,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -156,7 +158,6 @@ class MainTab(QWidget):
         left_layout.addWidget(self._build_file_group())
         left_layout.addWidget(self._build_query_group())
         left_layout.addWidget(self._build_options_group())
-        left_layout.addWidget(self.class_color_group)
         left_layout.addWidget(self._build_action_group())
         left_layout.addStretch()
 
@@ -367,7 +368,17 @@ class MainTab(QWidget):
 
     def _build_options_group(self) -> QGroupBox:
         group = QGroupBox("Options")
-        form = QFormLayout(group)
+        outer = QVBoxLayout(group)
+        outer.setContentsMargins(2, 2, 2, 2)
+
+        self.options_tabs = QTabWidget()
+        self.options_tabs.setMaximumHeight(200)
+        outer.addWidget(self.options_tabs)
+
+        # --- Basic tab ---
+        basic = QWidget()
+        form = QFormLayout(basic)
+        form.setContentsMargins(4, 4, 4, 4)
 
         self.clean_check = QCheckBox()
         self.clean_check.setChecked(True)
@@ -394,7 +405,20 @@ class MainTab(QWidget):
         for cs in ColorScale:
             self.color_combo.addItem(cs.value.capitalize(), cs)
         self.color_combo.setCurrentText("Turbo")
-        form.addRow("Default Color:", self.color_combo)
+        self.color_combo.currentIndexChanged.connect(self._on_live_option_changed)
+        form.addRow("Color Scale:", self.color_combo)
+
+        self.display_unit_combo = QComboBox()
+        self.display_unit_combo.addItem("Feet", True)
+        self.display_unit_combo.addItem("Meters", False)
+        self.display_unit_combo.currentIndexChanged.connect(self._on_display_unit_changed)
+        form.addRow("Display In:", self.display_unit_combo)
+
+        self.point_size_spin = QSpinBox()
+        self.point_size_spin.setRange(1, 20)
+        self.point_size_spin.setValue(5)
+        self.point_size_spin.valueChanged.connect(self._on_point_size_changed)
+        form.addRow("Point Size:", self.point_size_spin)
 
         self.unit_combo = QComboBox()
         self.unit_combo.addItem("Auto", None)
@@ -402,15 +426,21 @@ class MainTab(QWidget):
         self.unit_combo.addItem("Meters", "m")
         form.addRow("Force Unit:", self.unit_combo)
 
-        self.display_unit_combo = QComboBox()
-        self.display_unit_combo.addItem("Feet", True)
-        self.display_unit_combo.addItem("Meters", False)
-        form.addRow("Display In:", self.display_unit_combo)
+        self.options_tabs.addTab(basic, "Basic")
 
-        # Per-classification color mapping (populated after data loads)
+        # --- Advanced tab (classification colors, populated after data loads) ---
+        self._adv_widget = QWidget()
         self._class_color_combos: dict[int, QComboBox] = {}
-        self.class_color_group = QGroupBox("Classification Colors")
-        self.class_color_layout = QFormLayout(self.class_color_group)
+        self._class_visible_checks: dict[int, QCheckBox] = {}
+        self.class_color_layout = QFormLayout(self._adv_widget)
+        self.class_color_layout.setContentsMargins(4, 4, 4, 4)
+        self._adv_placeholder = QLabel("Load data to see classifications")
+        self._adv_placeholder.setStyleSheet("color: #888;")
+        self.class_color_layout.addRow(self._adv_placeholder)
+        self.options_tabs.addTab(self._adv_widget, "Advanced")
+
+        # No separate class_color_group needed anymore
+        self.class_color_group = QWidget()
         self.class_color_group.setVisible(False)
 
         return group
@@ -420,13 +450,14 @@ class MainTab(QWidget):
         while self.class_color_layout.rowCount() > 0:
             self.class_color_layout.removeRow(0)
         self._class_color_combos.clear()
-        self._class_visible_checks: dict[int, QCheckBox] = {}
+        self._class_visible_checks.clear()
 
         for cls in sorted(classifications):
             row = QHBoxLayout()
 
+            # Default: only Ground (2) is visible
             check = QCheckBox()
-            check.setChecked(True)
+            check.setChecked(cls == 2)
             check.toggled.connect(lambda checked, c=cls: self._on_class_visibility_toggled(c, checked))
             self._class_visible_checks[cls] = check
             row.addWidget(check)
@@ -442,15 +473,25 @@ class MainTab(QWidget):
             name = ASPRS_CLASSIFICATION_NAMES.get(cls, f"Class {cls}")
             self.class_color_layout.addRow(f"{name}:", row)
 
-        self.class_color_group.setVisible(len(classifications) > 0)
-
     def _get_class_cmaps(self) -> dict[int, ColorScale]:
         """Read the current per-classification colormap selections."""
         return {cls: combo.currentData() for cls, combo in self._class_color_combos.items()}
 
     def _on_class_visibility_toggled(self, cls: int, visible: bool) -> None:
-        """Toggle visibility of a classification in the 3D view."""
         self.embedded_search.set_class_visible(cls, visible)
+
+    def _on_live_option_changed(self) -> None:
+        """Re-render with updated colormaps when color combo changes."""
+        if self.embedded_search.is_active:
+            self.embedded_search.set_class_cmaps(self._get_class_cmaps())
+
+    def _on_display_unit_changed(self) -> None:
+        if self.embedded_search.is_active:
+            self.embedded_search.set_display_feet(self.display_unit_combo.currentData())
+
+    def _on_point_size_changed(self, value: int) -> None:
+        if self.embedded_search.is_active:
+            self.embedded_search.set_point_size(value)
 
     def _build_action_group(self) -> QWidget:
         widget = QWidget()
@@ -577,9 +618,13 @@ class MainTab(QWidget):
             class_cmaps=class_cmaps,
         )
 
+        # Apply default visibility (only Ground shown)
+        for cls, check in self._class_visible_checks.items():
+            self.embedded_search.set_class_visible(cls, check.isChecked())
+
         self._set_search_controls(True)
         self._update_mode_label()
-        self._log(f"Loaded {cloud.n_points:,} points. Click to select.\n")
+        self._log(f"Loaded {cloud.n_points:,} points. Click to select.")
 
     def _on_query_finished(self, result: object) -> None:
         self.analyze_btn.setEnabled(True)

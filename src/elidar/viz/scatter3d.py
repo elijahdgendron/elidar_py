@@ -405,6 +405,7 @@ class EmbeddedSearch:
         self._display_feet: bool = False
         self._unit_scale: float = 1.0
         self._z_exaggeration: float = 1.0
+        self._point_size: int = 5
         self._base_plot_z: np.ndarray | None = None
         self._polydatas: list[pv.PolyData] = []
         self._class_cmaps: dict[int, ColorScale] = {}
@@ -558,6 +559,35 @@ class EmbeddedSearch:
             actor.SetVisibility(visible)
             self.plotter.render()
 
+    def set_point_size(self, size: int) -> None:
+        """Update point size for all actors in place.
+
+        :param size: Point size in pixels.
+        """
+        self._point_size = size
+        for actor in self._class_actors.values():
+            actor.GetProperty().SetPointSize(size)
+        self.plotter.render()
+
+    def set_class_cmaps(self, class_cmaps: dict[int, ColorScale]) -> None:
+        """Update colormaps and re-render.
+
+        :param class_cmaps: Per-classification colormap mapping.
+        """
+        self._class_cmaps = class_cmaps
+        if self._active and self._working_cloud is not None:
+            self._render()
+
+    def set_display_feet(self, display_feet: bool) -> None:
+        """Switch display unit and re-render.
+
+        :param display_feet: True for feet, False for meters.
+        """
+        self._display_feet = display_feet
+        self._unit_scale = M2FT if display_feet else 1.0
+        if self._active and self._working_cloud is not None:
+            self._render()
+
     def _render(self) -> None:
         """Re-render the current working cloud into the plotter."""
         self._is_subsampled = self._working_cloud.n_points > DISPLAY_THRESHOLD
@@ -622,7 +652,7 @@ class EmbeddedSearch:
                     "scalars": "elevation",
                     "cmap": cmap,
                     "clim": [z_min, z_max],
-                    "point_size": 5,
+                    "point_size": self._point_size,
                     "render_points_as_spheres": True,
                 }
                 if cls == scalar_bar_cls:
@@ -644,11 +674,11 @@ class EmbeddedSearch:
             pd["elevation"] = self._base_plot_z
             self._polydatas.append(pd)
 
-            self.plotter.add_points(
+            actor = self.plotter.add_points(
                 pd,
                 scalars="elevation",
                 cmap=cmap,
-                point_size=5,
+                point_size=self._point_size,
                 render_points_as_spheres=True,
                 scalar_bar_args={
                     "title": f"Elevation ({unit})",
@@ -656,6 +686,7 @@ class EmbeddedSearch:
                     "fmt": "%.0f",
                 },
             )
+            self._class_actors[-1] = actor
 
         self.plotter.add_axes(
             xlabel="N",
