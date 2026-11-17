@@ -683,12 +683,10 @@ class EmbeddedSearch:
             z_min = float(self._base_plot_z.min())
             z_max = float(self._base_plot_z.max())
 
-            # Show scalar bar on first surface class found
-            scalar_bar_cls = unique_classes[0]
-            for sc in sorted(SURFACE_CLASSES):
-                if sc in unique_classes:
-                    scalar_bar_cls = sc
-                    break
+            # Determine which surface classes are present for colorbars
+            present_surface = sorted(sc for sc in SURFACE_CLASSES if sc in unique_classes)
+            # Primary gets title + labels; secondary gets just the gradient
+            primary_cls = present_surface[0] if present_surface else unique_classes[0]
 
             offset = 0
             for cls, cls_cloud in class_clouds:
@@ -714,12 +712,18 @@ class EmbeddedSearch:
                     "point_size": self._point_size,
                     "render_points_as_spheres": True,
                 }
-                if cls == scalar_bar_cls:
-                    cls_name = ASPRS_CLASSIFICATION_NAMES.get(cls, f"Class {cls}")
+                if cls == primary_cls:
                     add_kwargs["scalar_bar_args"] = {
-                        "title": f"Elevation ({unit}) — {cls_name}",
+                        "title": f"Elevation ({unit})",
                         "n_labels": 2,
                         "fmt": "%.0f",
+                    }
+                elif cls in present_surface:
+                    # Secondary surface class: show gradient, no labels
+                    add_kwargs["scalar_bar_args"] = {
+                        "title": "",
+                        "n_labels": 0,
+                        "position_x": 0.88,
                     }
                 else:
                     add_kwargs["show_scalar_bar"] = False

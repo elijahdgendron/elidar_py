@@ -24,6 +24,7 @@ class ColorScale(str, Enum):
     JET = "jet"
     TURBO = "turbo"
     WINTER = "winter"
+    ICE = "ice"
     GREYSCALE = "greyscale"
     BR = "br"
 
@@ -62,7 +63,7 @@ DEFAULT_CLASS_CMAPS: dict[int, ColorScale] = {
     2: ColorScale.TURBO,
     7: ColorScale.WINTER,
     18: ColorScale.WINTER,
-    21: ColorScale.WINTER,
+    21: ColorScale.ICE,
 }
 DEFAULT_CMAP = ColorScale.JET
 US_SURVEY_FOOT_TO_M = 0.30480060960121924

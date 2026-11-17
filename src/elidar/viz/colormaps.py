@@ -23,10 +23,22 @@ _GREYSCALE_CMAP = LinearSegmentedColormap.from_list(
     [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)],
 )
 
+_ICE_CMAP = LinearSegmentedColormap.from_list(
+    "elidar_ice",
+    [
+        (0.05, 0.05, 0.30),  # deep navy
+        (0.15, 0.35, 0.65),  # steel blue
+        (0.40, 0.70, 0.90),  # ice blue
+        (0.75, 0.90, 0.97),  # frost
+        (0.95, 0.98, 1.00),  # near-white
+    ],
+)
+
 _COLORMAP_REGISTRY: dict[ColorScale, str | Colormap] = {
     ColorScale.JET: "jet",
     ColorScale.TURBO: "turbo",
     ColorScale.WINTER: "winter",
+    ColorScale.ICE: _ICE_CMAP,
     ColorScale.BR: _BR_CMAP,
     ColorScale.GREYSCALE: _GREYSCALE_CMAP,
 }
