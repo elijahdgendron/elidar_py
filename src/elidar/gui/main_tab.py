@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -26,18 +25,65 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from pyvistaqt import QtInteractor
 
-from elidar.core.types import ColorScale, QueryOptions, QueryType
+from elidar.core.types import ColorScale, M2FT, QueryOptions, QueryType
+from elidar.viz.scatter3d import EmbeddedSearch
 
 logger = logging.getLogger(__name__)
 
 
+class _LoadWorker(QThread):
+    """Background thread for loading and processing LiDAR data."""
+
+    finished = pyqtSignal(object, object)  # (cloud, crs_info)
+    error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        lat: float,
+        lon: float,
+        las_paths: list[str],
+        options: QueryOptions,
+    ) -> None:
+        super().__init__()
+        self.lat = lat
+        self.lon = lon
+        self.las_paths = las_paths
+        self.options = options
+
+    def run(self) -> None:
+        try:
+            from elidar.core.query import _load_and_merge, _normalize_paths, _spatial_filter
+            from elidar.core import cleaning
+
+            paths = _normalize_paths(
+                self.las_paths if len(self.las_paths) > 1 else self.las_paths[0]
+            )
+            cloud, crs_info = _load_and_merge(paths, self.options)
+            cloud = _spatial_filter(cloud, self.lat, self.lon, self.options.query_radius_deg)
+
+            if cloud.n_points == 0:
+                self.error.emit("Query point is not within the LAS data extent")
+                return
+
+            if self.options.clean_data:
+                cloud = cleaning.clean(
+                    cloud,
+                    num_neighbors=self.options.filter_num_neighbors,
+                    std_ratio=self.options.filter_threshold,
+                )
+
+            self.finished.emit(cloud, crs_info)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class _QueryWorker(QThread):
-    """Background thread for running LiDAR queries."""
+    """Background thread for non-interactive queries (peak/point)."""
 
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
-    progress = pyqtSignal(str)
 
     def __init__(
         self,
@@ -58,7 +104,6 @@ class _QueryWorker(QThread):
         try:
             from elidar.core.query import query_lidar
 
-            self.progress.emit("Loading and processing LiDAR data...")
             result = query_lidar(
                 query_lat=self.lat,
                 query_lon=self.lon,
@@ -72,17 +117,19 @@ class _QueryWorker(QThread):
 
 
 class MainTab(QWidget):
-    """Primary analysis tab with file selection, parameters, and results."""
+    """Primary analysis tab with embedded 3D viewer."""
 
     def __init__(self, settings: QSettings) -> None:
         super().__init__()
         self.settings = settings
-        self._worker: _QueryWorker | None = None
+        self._worker: QThread | None = None
+        self._last_result = None
 
         layout = QHBoxLayout(self)
 
-        # Left panel: controls
+        # Left panel: controls (narrow)
         left = QWidget()
+        left.setMaximumWidth(340)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -92,17 +139,73 @@ class MainTab(QWidget):
         left_layout.addWidget(self._build_action_group())
         left_layout.addStretch()
 
-        # Right panel: results
+        # Right panel: 3D view on top, results/prominence on bottom
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(self._build_results_group())
 
+        # 3D viewer
+        self.plotter = QtInteractor(self)
+        self.plotter.setMinimumHeight(300)
+        self.embedded_search = EmbeddedSearch(
+            self.plotter,
+            on_status=self._on_search_status,
+            on_result=self._on_search_result,
+        )
+
+        # Search control buttons
+        btn_bar = QHBoxLayout()
+        self.zoom_btn = QPushButton("Zoom (Z)")
+        self.zoom_btn.clicked.connect(self._on_zoom)
+        self.zoom_btn.setEnabled(False)
+        btn_bar.addWidget(self.zoom_btn)
+
+        self.done_btn = QPushButton("Done (D)")
+        self.done_btn.clicked.connect(self._on_done)
+        self.done_btn.setEnabled(False)
+        btn_bar.addWidget(self.done_btn)
+
+        self.cancel_btn = QPushButton("Cancel (Esc)")
+        self.cancel_btn.clicked.connect(self._on_cancel)
+        self.cancel_btn.setEnabled(False)
+        btn_bar.addWidget(self.cancel_btn)
+
+        # Mode label
+        self.mode_label = QLabel("")
+        self.mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.mode_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+
+        # Bottom: results + prominence side by side
+        bottom = QWidget()
+        bottom_layout = QHBoxLayout(bottom)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.results_text = QTextEdit()
+        self.results_text.setReadOnly(True)
+        self.results_text.setMaximumHeight(150)
+        self.results_text.setStyleSheet("font-family: monospace; font-size: 11px;")
+        bottom_layout.addWidget(self.results_text, stretch=3)
+
+        bottom_layout.addWidget(self._build_prominence_group(), stretch=2)
+
+        # Assemble right side
+        right_layout.addWidget(self.mode_label)
+        right_layout.addWidget(self.plotter, stretch=1)
+        right_layout.addLayout(btn_bar)
+        right_layout.addWidget(bottom)
+
+        # Main splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left)
         splitter.addWidget(right)
-        splitter.setSizes([400, 300])
+        splitter.setSizes([300, 600])
         layout.addWidget(splitter)
+
+        # Keyboard shortcuts on the plotter widget
+        self.plotter.add_key_event("z", self._on_zoom)
+        self.plotter.add_key_event("d", self._on_done)
+        self.plotter.add_key_event("Return", self._on_done)
+        self.plotter.add_key_event("Escape", self._on_cancel)
 
     def _build_file_group(self) -> QGroupBox:
         group = QGroupBox("Data Files")
@@ -123,14 +226,13 @@ class MainTab(QWidget):
         layout.addLayout(btn_row)
 
         self.file_list = QListWidget()
-        self.file_list.setMaximumHeight(100)
+        self.file_list.setMaximumHeight(80)
         layout.addWidget(self.file_list)
 
-        # DEM (optional)
         dem_row = QHBoxLayout()
-        dem_row.addWidget(QLabel("DEM (optional):"))
+        dem_row.addWidget(QLabel("DEM:"))
         self.dem_edit = QLineEdit()
-        self.dem_edit.setPlaceholderText("Only needed if LAZ has no CRS")
+        self.dem_edit.setPlaceholderText("Optional — only if LAZ has no CRS")
         dem_row.addWidget(self.dem_edit)
         self.dem_browse_btn = QPushButton("...")
         self.dem_browse_btn.setMaximumWidth(30)
@@ -216,51 +318,39 @@ class MainTab(QWidget):
 
         return widget
 
-    def _build_results_group(self) -> QGroupBox:
-        group = QGroupBox("Results")
-        layout = QVBoxLayout(group)
-
-        self.results_text = QTextEdit()
-        self.results_text.setReadOnly(True)
-        self.results_text.setStyleSheet("font-family: monospace; font-size: 12px;")
-        layout.addWidget(self.results_text)
-
-        # Prominence calculator
-        prom_group = QGroupBox("Prominence Calculator")
-        prom_layout = QFormLayout(prom_group)
+    def _build_prominence_group(self) -> QGroupBox:
+        group = QGroupBox("Prominence")
+        form = QFormLayout(group)
 
         self.peak_elev_edit = QLineEdit()
         self.peak_elev_edit.setPlaceholderText("ft")
-        prom_layout.addRow("Peak Elev (ft):", self.peak_elev_edit)
+        form.addRow("Peak (ft):", self.peak_elev_edit)
 
         self.saddle_elev_edit = QLineEdit()
         self.saddle_elev_edit.setPlaceholderText("ft")
-        prom_layout.addRow("Saddle Elev (ft):", self.saddle_elev_edit)
+        form.addRow("Saddle (ft):", self.saddle_elev_edit)
 
+        btn_row = QHBoxLayout()
         self.calc_prom_btn = QPushButton("Calculate")
         self.calc_prom_btn.clicked.connect(self._on_calc_prominence)
-        prom_layout.addRow(self.calc_prom_btn)
+        btn_row.addWidget(self.calc_prom_btn)
 
-        self.prom_label = QLabel("")
-        self.prom_label.setStyleSheet("font-weight: bold; font-size: 13px;")
-        prom_layout.addRow("Prominence:", self.prom_label)
-
-        layout.addWidget(prom_group)
-
-        # Copy buttons
-        btn_row = QHBoxLayout()
-        copy_peak_btn = QPushButton("Copy Peak to Prominence")
+        copy_peak_btn = QPushButton("Copy → Peak")
         copy_peak_btn.clicked.connect(lambda: self._copy_to_prominence("peak"))
         btn_row.addWidget(copy_peak_btn)
 
-        copy_saddle_btn = QPushButton("Copy Saddle to Prominence")
+        copy_saddle_btn = QPushButton("Copy → Saddle")
         copy_saddle_btn.clicked.connect(lambda: self._copy_to_prominence("saddle"))
         btn_row.addWidget(copy_saddle_btn)
-        layout.addLayout(btn_row)
+        form.addRow(btn_row)
+
+        self.prom_label = QLabel("")
+        self.prom_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        form.addRow("Result:", self.prom_label)
 
         return group
 
-    # --- Slots ---
+    # --- File slots ---
 
     def _on_add_files(self) -> None:
         last_dir = self.settings.value("last_dir", os.path.expanduser("~"))
@@ -304,6 +394,19 @@ class MainTab(QWidget):
     def _get_las_paths(self) -> list[str]:
         return [self.file_list.item(i).text() for i in range(self.file_list.count())]
 
+    # --- Analyze ---
+
+    def _get_options(self) -> QueryOptions:
+        return QueryOptions(
+            clean_data=self.clean_check.isChecked(),
+            colorscale=self.color_combo.currentData(),
+            filter_ground=self.ground_check.isChecked(),
+            query_radius_deg=self.radius_spin.value(),
+            zoom_scale=self.zoom_spin.value(),
+            force_unit=self.unit_combo.currentData(),
+            dem_path=self.dem_edit.text().strip() or None,
+        )
+
     def _on_analyze(self) -> None:
         paths = self._get_las_paths()
         if not paths:
@@ -317,66 +420,34 @@ class MainTab(QWidget):
         self.settings.setValue("last_lat", lat)
         self.settings.setValue("last_lon", lon)
 
-        dem = self.dem_edit.text().strip() or None
-        force_unit = self.unit_combo.currentData()
+        options = self._get_options()
 
-        options = QueryOptions(
-            clean_data=self.clean_check.isChecked(),
-            colorscale=self.color_combo.currentData(),
-            filter_ground=self.ground_check.isChecked(),
-            query_radius_deg=self.radius_spin.value(),
-            zoom_scale=self.zoom_spin.value(),
-            force_unit=force_unit,
-            dem_path=dem,
-        )
-
-        if query_type == QueryType.SEARCH:
-            self._run_search(lat, lon, paths, options)
-        else:
-            self._run_background_query(lat, lon, query_type, paths, options)
-
-    def _run_search(
-        self, lat: float, lon: float, paths: list[str], options: QueryOptions
-    ) -> None:
-        """Run search mode directly (it opens its own pyvista window)."""
         self.analyze_btn.setEnabled(False)
-        self.analyze_btn.setText("Analyzing...")
-        self.results_text.append("Running search mode...\n")
-
-        try:
-            from elidar.core.query import query_lidar
-
-            result = query_lidar(
-                query_lat=lat,
-                query_lon=lon,
-                query_type=QueryType.SEARCH,
-                las_path=paths if len(paths) > 1 else paths[0],
-                options=options,
-            )
-            self._display_result(result)
-        except Exception as e:
-            self._display_error(str(e))
-        finally:
-            self.analyze_btn.setEnabled(True)
-            self.analyze_btn.setText("Analyze")
-
-    def _run_background_query(
-        self,
-        lat: float,
-        lon: float,
-        query_type: QueryType,
-        paths: list[str],
-        options: QueryOptions,
-    ) -> None:
-        """Run peak/point query in a background thread."""
-        self.analyze_btn.setEnabled(False)
-        self.analyze_btn.setText("Analyzing...")
+        self.analyze_btn.setText("Loading...")
         self.results_text.append(f"Running {query_type.value} query...\n")
 
-        self._worker = _QueryWorker(lat, lon, query_type, paths, options)
-        self._worker.finished.connect(self._on_query_finished)
-        self._worker.error.connect(self._on_query_error)
-        self._worker.start()
+        if query_type == QueryType.SEARCH:
+            self._worker = _LoadWorker(lat, lon, paths, options)
+            self._worker.finished.connect(self._on_data_loaded)
+            self._worker.error.connect(self._on_query_error)
+            self._worker.start()
+        else:
+            self._worker = _QueryWorker(lat, lon, query_type, paths, options)
+            self._worker.finished.connect(self._on_query_finished)
+            self._worker.error.connect(self._on_query_error)
+            self._worker.start()
+
+    def _on_data_loaded(self, cloud: object, crs_info: object) -> None:
+        """Search mode: data loaded, render into embedded viewer."""
+        self.analyze_btn.setEnabled(True)
+        self.analyze_btn.setText("Analyze")
+
+        options = self._get_options()
+        self.embedded_search.load(cloud, crs_info, options)
+
+        self._set_search_controls(True)
+        self._update_mode_label()
+        self.results_text.append(f"Loaded {cloud.n_points:,} points. Click to select.\n")
 
     def _on_query_finished(self, result: object) -> None:
         self.analyze_btn.setEnabled(True)
@@ -386,14 +457,61 @@ class MainTab(QWidget):
     def _on_query_error(self, msg: str) -> None:
         self.analyze_btn.setEnabled(True)
         self.analyze_btn.setText("Analyze")
-        self._display_error(msg)
+        self.results_text.append(f"ERROR: {msg}\n")
+        logger.error("Query failed: %s", msg)
+
+    # --- Search controls ---
+
+    def _set_search_controls(self, enabled: bool) -> None:
+        self.zoom_btn.setEnabled(enabled)
+        self.done_btn.setEnabled(enabled)
+        self.cancel_btn.setEnabled(enabled)
+
+    def _update_mode_label(self) -> None:
+        if not self.embedded_search.is_active:
+            self.mode_label.setText("")
+            return
+        if self.embedded_search.is_subsampled:
+            self.mode_label.setText("CLICK TO DOWNSELECT")
+            self.mode_label.setStyleSheet(
+                "font-weight: bold; font-size: 13px; color: red;"
+            )
+        else:
+            self.mode_label.setText("CLICK TO SELECT")
+            self.mode_label.setStyleSheet(
+                "font-weight: bold; font-size: 13px; color: green;"
+            )
+
+    def _on_zoom(self) -> None:
+        self.embedded_search.zoom()
+        self._update_mode_label()
+
+    def _on_done(self) -> None:
+        result = self.embedded_search.done()
+        if result is not None:
+            self._set_search_controls(False)
+            self._update_mode_label()
+
+    def _on_cancel(self) -> None:
+        self.embedded_search.cancel()
+        self._set_search_controls(False)
+        self.mode_label.setText("")
+        self.results_text.append("Search cancelled.\n")
+
+    # --- Search callbacks ---
+
+    def _on_search_status(self, msg: str) -> None:
+        self.results_text.append(msg + "\n")
+
+    def _on_search_result(self, result: object) -> None:
+        self._display_result(result)
+
+    # --- Results ---
 
     def _display_result(self, result: object) -> None:
         if result is None:
             self.results_text.append("No result (point not in data or cancelled)\n")
             return
-
-        from elidar.core.types import M2FT
 
         self._last_result = result
         self.results_text.append(
@@ -402,9 +520,7 @@ class MainTab(QWidget):
             f"  Location:  {result.location_deg[0]:.6f}°N, {result.location_deg[1]:.6f}°W\n"
         )
 
-    def _display_error(self, msg: str) -> None:
-        self.results_text.append(f"ERROR: {msg}\n")
-        logger.error("Query failed: %s", msg)
+    # --- Prominence ---
 
     def _on_calc_prominence(self) -> None:
         try:
@@ -415,11 +531,11 @@ class MainTab(QWidget):
             return
 
         prom_ft = peak - saddle
-        prom_m = prom_ft / 3.2808398950131233
+        prom_m = prom_ft / M2FT
         self.prom_label.setText(f"{prom_ft:,.2f} ft  ({prom_m:,.2f} m)")
 
     def _copy_to_prominence(self, target: str) -> None:
-        if not hasattr(self, "_last_result") or self._last_result is None:
+        if self._last_result is None:
             return
         val = f"{self._last_result.elevation_ft:.2f}"
         if target == "peak":

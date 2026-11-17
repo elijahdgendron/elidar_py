@@ -354,3 +354,222 @@ def _find_picked_index(
         + (cloud.z - picked_display[2]) ** 2
     )
     return int(np.argmin(dist))
+
+
+_M_PER_DEG_LAT = 111_320.0
+
+
+class EmbeddedSearch:
+    """Manages the search workflow inside an embedded pyvista plotter.
+
+    Unlike the standalone ``interactive_search()`` which blocks in a loop,
+    this class is event-driven: the GUI calls ``load()``, then ``zoom()``
+    / ``done()`` / ``cancel()`` in response to button clicks or key presses.
+
+    :param plotter: A pyvista plotter (``pyvistaqt.QtInteractor`` or ``pv.Plotter``).
+    :param on_status: Callback invoked with a status string on each pick / zoom.
+    :param on_result: Callback invoked with the final ``PickResult`` on done.
+    """
+
+    def __init__(
+        self,
+        plotter: pv.Plotter,
+        on_status: callable | None = None,
+        on_result: callable | None = None,
+    ) -> None:
+        self.plotter = plotter
+        self.on_status = on_status
+        self.on_result = on_result
+
+        self._working_cloud: PointCloudData | None = None
+        self._display_cloud: PointCloudData | None = None
+        self._display_x: np.ndarray | None = None
+        self._display_y: np.ndarray | None = None
+        self._picked_point: np.ndarray | None = None
+        self._pick_idx: int | None = None
+        self._zoom_radius: float = 0.0
+        self._options: QueryOptions | None = None
+        self._crs_info: CrsInfo | None = None
+        self._is_subsampled: bool = False
+        self._center_lat: float = 0.0
+        self._center_lon: float = 0.0
+        self._m_per_deg_lon: float = 0.0
+        self._active: bool = False
+
+    @property
+    def is_active(self) -> bool:
+        return self._active
+
+    @property
+    def is_subsampled(self) -> bool:
+        return self._is_subsampled
+
+    def load(
+        self,
+        cloud: PointCloudData,
+        crs_info: CrsInfo,
+        options: QueryOptions,
+    ) -> None:
+        """Load a point cloud and render it.
+
+        :param cloud: Cleaned point cloud with lat/lon populated.
+        :param crs_info: CRS info for display.
+        :param options: Query options.
+        """
+        self._working_cloud = cloud
+        self._options = options
+        self._crs_info = crs_info
+        self._zoom_radius = options.query_radius_deg / 2
+        self._picked_point = None
+        self._pick_idx = None
+        self._active = True
+        self._render()
+
+    def zoom(self) -> None:
+        """Zoom around the currently picked point."""
+        if not self._active or self._picked_point is None:
+            return
+
+        idx = self._pick_idx
+        cloud = self._display_cloud
+
+        self._zoom_radius *= self._options.zoom_scale
+        clat = cloud.lat[idx]
+        clon = cloud.lon[idx]
+        dist = np.sqrt(
+            (self._working_cloud.lat - clat) ** 2
+            + (self._working_cloud.lon - clon) ** 2
+        )
+        mask = dist <= self._zoom_radius
+        self._working_cloud = self._working_cloud.subset(mask)
+
+        if self._working_cloud.n_points == 0:
+            self._emit_status("Zoom resulted in empty cloud")
+            self.cancel()
+            return
+
+        logger.info(
+            "Zoomed: radius=%.6f deg, %d points remaining",
+            self._zoom_radius,
+            self._working_cloud.n_points,
+        )
+
+        self._picked_point = None
+        self._pick_idx = None
+        self._render()
+
+    def done(self) -> PickResult | None:
+        """Accept the current selection.
+
+        :return: PickResult, or None if subsampled or no selection.
+        """
+        if not self._active or self._picked_point is None:
+            return None
+
+        if self._is_subsampled:
+            self._emit_status("Still subsampled — zooming instead")
+            self.zoom()
+            return None
+
+        cloud = self._display_cloud
+        idx = self._pick_idx
+        result = PickResult(
+            z=float(cloud.z[idx]),
+            x_local=float(cloud.x[idx]),
+            y_local=float(cloud.y[idx]),
+            lat=float(cloud.lat[idx]),
+            lon=float(cloud.lon[idx]),
+            index=idx,
+        )
+        logger.info(
+            "Point selected: z=%.4f at lat=%.6f, lon=%.6f",
+            result.z, result.lat, result.lon,
+        )
+        if self.on_result:
+            self.on_result(result)
+        return result
+
+    def cancel(self) -> None:
+        """Clear state and blank the viewer."""
+        self._active = False
+        self._working_cloud = None
+        self._display_cloud = None
+        self._picked_point = None
+        self._pick_idx = None
+        self.plotter.clear()
+        self.plotter.render()
+
+    def _render(self) -> None:
+        """Re-render the current working cloud into the plotter."""
+        self._is_subsampled = self._working_cloud.n_points > DISPLAY_THRESHOLD
+        if self._is_subsampled:
+            self._display_cloud = _subsample(self._working_cloud, DISPLAY_THRESHOLD)
+        else:
+            self._display_cloud = self._working_cloud
+
+        cloud = self._display_cloud
+
+        self._center_lat = float(np.mean(cloud.lat))
+        self._center_lon = float(np.mean(cloud.lon))
+        self._m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(self._center_lat))
+
+        self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT
+        self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon
+        plot_z = cloud.z.astype(np.float64)
+
+        points = np.column_stack([self._display_x, self._display_y, plot_z])
+        polydata = pv.PolyData(points)
+        polydata["elevation"] = plot_z
+
+        cmap = get_colormap(self._options.colorscale)
+
+        self.plotter.clear()
+        self.plotter.add_points(
+            polydata,
+            scalars="elevation",
+            cmap=cmap,
+            point_size=5,
+            render_points_as_spheres=True,
+        )
+
+        _add_instructions(self.plotter, cloud.n_points, self._is_subsampled)
+
+        self.plotter.enable_point_picking(
+            callback=self._on_pick,
+            left_clicking=True,
+            picker="point",
+            show_point=True,
+            color="red",
+            point_size=15,
+            show_message=False,
+            tolerance=0.025,
+        )
+
+        self.plotter.reset_camera()
+        self.plotter.camera_position = "xz"
+        self.plotter.camera.elevation = 25
+        self.plotter.camera.azimuth = -60
+        self.plotter.render()
+
+    def _on_pick(self, point: np.ndarray) -> None:
+        """Callback when the user clicks a point in the embedded view."""
+        self._picked_point = point
+        self._pick_idx = _find_picked_index(
+            self._display_cloud, point, self._display_x, self._display_y,
+        )
+
+        real_lat = point[0] / _M_PER_DEG_LAT + self._center_lat
+        real_lon = point[1] / self._m_per_deg_lon + self._center_lon
+        z_m = point[2]
+
+        _update_status(self.plotter, real_lat, real_lon, z_m)
+
+        status = (
+            f"Selected: {real_lat:.6f}°N, {real_lon:.6f}°W  "
+            f"Elev: {z_m:.2f} m ({z_m * M2FT:.2f} ft)"
+        )
+        self._emit_status(status)
+
+    def _emit_status(self, msg: str) -> None:
+        if self.on_status:
+            self.on_status(msg)
