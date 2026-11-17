@@ -174,25 +174,32 @@ class MainTab(QWidget):
         # Page 0: placeholder with background image
         bg_path = Path(__file__).parent / "resources" / "background.png"
         placeholder = QFrame()
+        placeholder.setObjectName("placeholder")
         placeholder.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         placeholder.setStyleSheet(
-            f"QFrame {{ "
+            f"QFrame#placeholder {{ "
             f"  border-image: url({bg_path.as_posix()}) 0 0 0 0 stretch stretch; "
             f"  border: 1px solid #444; border-radius: 4px; "
             f"}}"
         )
         ph_layout = QVBoxLayout(placeholder)
-        # Semi-transparent overlay so text is readable
+        # Dark wash over the image to dull it
+        wash = QWidget()
+        wash.setStyleSheet("background: rgba(0, 0, 0, 120); border: none;")
+        wash_layout = QVBoxLayout(wash)
+        # Text with transparent grey box
         overlay = QLabel("3D LiDAR Viewer\n\nAdd files and click Analyze\nto load point cloud data")
         overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         overlay.setStyleSheet(
             "color: white; font-size: 16px; font-weight: bold; "
-            "background: rgba(0, 0, 0, 140); border: none; border-radius: 8px; "
+            "background: rgba(80, 80, 80, 150); border: none; border-radius: 8px; "
             "padding: 20px;"
         )
-        ph_layout.addStretch()
-        ph_layout.addWidget(overlay, alignment=Qt.AlignmentFlag.AlignCenter)
-        ph_layout.addStretch()
+        wash_layout.addStretch()
+        wash_layout.addWidget(overlay, alignment=Qt.AlignmentFlag.AlignCenter)
+        wash_layout.addStretch()
+        ph_layout.setContentsMargins(0, 0, 0, 0)
+        ph_layout.addWidget(wash)
         self.viewer_stack.addWidget(placeholder)
 
         # Page 1: pyvista plotter
