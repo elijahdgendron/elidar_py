@@ -610,8 +610,15 @@ class EmbeddedSearch:
         s = self._unit_scale
         unit = "ft" if self._display_feet else "m"
 
-        self._center_lat = float(np.mean(wc.lat))
-        self._center_lon = float(np.mean(wc.lon))
+        # Center on ground points (class 2) if available so the view
+        # frames the terrain of interest, not the full tile extent.
+        if wc.classification is not None and np.any(wc.classification == 2):
+            ground_mask = wc.classification == 2
+            self._center_lat = float(np.mean(wc.lat[ground_mask]))
+            self._center_lon = float(np.mean(wc.lon[ground_mask]))
+        else:
+            self._center_lat = float(np.mean(wc.lat))
+            self._center_lon = float(np.mean(wc.lon))
         self._m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(self._center_lat))
 
         self.plotter.disable_picking()
@@ -768,7 +775,13 @@ class EmbeddedSearch:
             tolerance=0.025,
         )
 
-        self.plotter.reset_camera()
+        # Frame camera on ground actor if it exists, else all actors
+        ground_actor = self._class_actors.get(2)
+        if ground_actor is not None:
+            bounds = ground_actor.GetBounds()
+            self.plotter.reset_camera(bounds=bounds)
+        else:
+            self.plotter.reset_camera()
         self.plotter.camera_position = "xz"
         self.plotter.camera.elevation = 25
         self.plotter.camera.azimuth = -60
