@@ -51,6 +51,7 @@ class PickResult:
     lat: float
     lon: float
     index: int
+    classification: int | None = None
 
 
 class _UserAction(Enum):
@@ -494,6 +495,7 @@ class EmbeddedSearch:
 
         cloud = self._display_cloud
         idx = self._pick_idx
+        cls = int(cloud.classification[idx]) if cloud.classification is not None else None
         result = PickResult(
             z=float(cloud.z[idx]),
             x_local=float(cloud.x[idx]),
@@ -501,6 +503,7 @@ class EmbeddedSearch:
             lat=float(cloud.lat[idx]),
             lon=float(cloud.lon[idx]),
             index=idx,
+            classification=cls,
         )
         logger.info(
             "Point selected: z=%.4f at lat=%.6f, lon=%.6f",

@@ -214,10 +214,38 @@ class MainTab(QWidget):
         self.mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mode_label.setStyleSheet("font-weight: bold; font-size: 13px;")
 
-        # Bottom: results log
+        # Result fields
+        result_fields = QHBoxLayout()
+        result_fields.setContentsMargins(0, 0, 0, 0)
+
+        self.result_class_edit = QLineEdit()
+        self.result_class_edit.setReadOnly(True)
+        self.result_class_edit.setPlaceholderText("—")
+        result_fields.addWidget(QLabel("Class:"))
+        result_fields.addWidget(self.result_class_edit)
+
+        self.result_elev_edit = QLineEdit()
+        self.result_elev_edit.setReadOnly(True)
+        self.result_elev_edit.setPlaceholderText("—")
+        result_fields.addWidget(QLabel("Elev:"))
+        result_fields.addWidget(self.result_elev_edit)
+
+        self.result_lat_edit = QLineEdit()
+        self.result_lat_edit.setReadOnly(True)
+        self.result_lat_edit.setPlaceholderText("—")
+        result_fields.addWidget(QLabel("Lat:"))
+        result_fields.addWidget(self.result_lat_edit)
+
+        self.result_lon_edit = QLineEdit()
+        self.result_lon_edit.setReadOnly(True)
+        self.result_lon_edit.setPlaceholderText("—")
+        result_fields.addWidget(QLabel("Lon:"))
+        result_fields.addWidget(self.result_lon_edit)
+
+        # Info terminal
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
-        self.results_text.setMaximumHeight(150)
+        self.results_text.setMaximumHeight(120)
         self.results_text.setStyleSheet("font-family: monospace; font-size: 11px;")
 
         # Exaggeration slider (vertical, right of viewer)
@@ -250,6 +278,7 @@ class MainTab(QWidget):
         right_layout.addWidget(self.mode_label)
         right_layout.addLayout(viewer_row, stretch=1)
         right_layout.addLayout(btn_bar)
+        right_layout.addLayout(result_fields)
         right_layout.addWidget(self.results_text)
 
         # Main splitter
@@ -512,7 +541,7 @@ class MainTab(QWidget):
 
         self.analyze_btn.setEnabled(False)
         self.analyze_btn.setText("Loading...")
-        self.results_text.append(f"Running {query_type.value} query...\n")
+        self._log(f"Running {query_type.value} query...\n")
 
         if query_type == QueryType.SEARCH:
             self._worker = _LoadWorker(lat, lon, paths, options)
@@ -550,7 +579,7 @@ class MainTab(QWidget):
 
         self._set_search_controls(True)
         self._update_mode_label()
-        self.results_text.append(f"Loaded {cloud.n_points:,} points. Click to select.\n")
+        self._log(f"Loaded {cloud.n_points:,} points. Click to select.\n")
 
     def _on_query_finished(self, result: object) -> None:
         self.analyze_btn.setEnabled(True)
@@ -560,7 +589,7 @@ class MainTab(QWidget):
     def _on_query_error(self, msg: str) -> None:
         self.analyze_btn.setEnabled(True)
         self.analyze_btn.setText("Analyze")
-        self.results_text.append(f"ERROR: {msg}\n")
+        self._log(f"ERROR: {msg}\n")
         logger.error("Query failed: %s", msg)
 
     # --- Search controls ---
@@ -600,7 +629,7 @@ class MainTab(QWidget):
         self._set_search_controls(False)
         self.mode_label.setText("")
         self.viewer_stack.setCurrentIndex(0)
-        self.results_text.append("Search cancelled.\n")
+        self._log("Search cancelled.\n")
 
     def _on_exag_changed(self, value: int) -> None:
         factor = value / 10.0
@@ -610,7 +639,7 @@ class MainTab(QWidget):
     # --- Search callbacks ---
 
     def _on_search_status(self, msg: str) -> None:
-        self.results_text.append(msg + "\n")
+        self._log(msg + "\n")
 
     def _on_search_result(self, pick: PickResult) -> None:
         result = QueryResult(
@@ -619,21 +648,45 @@ class MainTab(QWidget):
             location_local=(pick.x_local, pick.y_local),
             location_deg=(pick.lat, pick.lon),
             query_type=QueryType.SEARCH,
+            classification=pick.classification,
         )
         self._display_result(result)
 
     # --- Results ---
 
+    def _log(self, msg: str) -> None:
+        """Append a message to the info terminal."""
+        self._log(msg)
+
+    def _clear_result_fields(self) -> None:
+        self.result_class_edit.clear()
+        self.result_elev_edit.clear()
+        self.result_lat_edit.clear()
+        self.result_lon_edit.clear()
+
     def _display_result(self, result: object) -> None:
         if result is None:
-            self.results_text.append("No result (point not in data or cancelled)\n")
+            self._log("No result (point not in data or cancelled)")
             return
 
         self._last_result = result
-        self.results_text.append(
-            f"--- {result.query_type.value.upper()} ---\n"
-            f"  Elevation: {result.elevation_ft:,.2f} ft  ({result.elevation_m:,.2f} m)\n"
-            f"  Location:  {result.location_deg[0]:.6f}°N, {result.location_deg[1]:.6f}°W\n"
+
+        # Populate result fields
+        if result.classification is not None:
+            cls_name = ASPRS_CLASSIFICATION_NAMES.get(result.classification, f"Class {result.classification}")
+            self.result_class_edit.setText(cls_name)
+        else:
+            self.result_class_edit.setText("N/A")
+
+        self.result_elev_edit.setText(f"{result.elevation_ft:,.2f} ft  ({result.elevation_m:,.2f} m)")
+        self.result_lat_edit.setText(f"{result.location_deg[0]:.6f}")
+        self.result_lon_edit.setText(f"{result.location_deg[1]:.6f}")
+
+        # Log to terminal
+        self._log(
+            f"[{result.query_type.value.upper()}] "
+            f"{result.elevation_ft:,.2f} ft  ({result.elevation_m:,.2f} m)  "
+            f"at ({result.location_deg[0]:.6f}, {result.location_deg[1]:.6f})"
         )
         if self._tools_tab is not None:
             self._tools_tab.set_last_result_ft(result.elevation_ft)

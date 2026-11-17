@@ -141,6 +141,7 @@ class QueryResult:
     location_local: tuple[float, float]
     location_deg: tuple[float, float]
     query_type: QueryType
+    classification: int | None = None
 
 
 @dataclass
