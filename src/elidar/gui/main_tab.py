@@ -344,10 +344,11 @@ class MainTab(QWidget):
         return group
 
     def _build_query_group(self) -> QGroupBox:
-        group = QGroupBox("Query Location")
+        group = QGroupBox("Query Options")
         form = QFormLayout(group)
 
         self.guess_center_check = QCheckBox("Use tile center")
+        self.guess_center_check.setChecked(True)
         self.guess_center_check.toggled.connect(self._on_guess_center_toggled)
         form.addRow(self.guess_center_check)
 
@@ -355,19 +356,32 @@ class MainTab(QWidget):
         self.lat_spin.setRange(-90.0, 90.0)
         self.lat_spin.setDecimals(6)
         self.lat_spin.setValue(float(self.settings.value("last_lat", 48.7768)))
+        self.lat_spin.setEnabled(False)
         form.addRow("Latitude:", self.lat_spin)
 
         self.lon_spin = QDoubleSpinBox()
         self.lon_spin.setRange(-180.0, 180.0)
         self.lon_spin.setDecimals(6)
         self.lon_spin.setValue(float(self.settings.value("last_lon", -121.8145)))
+        self.lon_spin.setEnabled(False)
         form.addRow("Longitude:", self.lon_spin)
+
+        self.radius_spin = QDoubleSpinBox()
+        self.radius_spin.setRange(0.0001, 1.0)
+        self.radius_spin.setDecimals(4)
+        self.radius_spin.setSingleStep(0.001)
+        self.radius_spin.setValue(0.05)
+        form.addRow("Search Radius (deg):", self.radius_spin)
 
         self.query_type_combo = QComboBox()
         for qt in QueryType:
             self.query_type_combo.addItem(qt.value.capitalize(), qt)
         self.query_type_combo.setCurrentIndex(0)
         form.addRow("Query Type:", self.query_type_combo)
+
+        self.clean_check = QCheckBox()
+        self.clean_check.setChecked(True)
+        form.addRow("Clean Data:", self.clean_check)
 
         return group
 
@@ -376,7 +390,7 @@ class MainTab(QWidget):
         self.lon_spin.setEnabled(not checked)
 
     def _build_options_group(self) -> QGroupBox:
-        group = QGroupBox("Options")
+        group = QGroupBox("Display Options")
         outer = QVBoxLayout(group)
         outer.setContentsMargins(2, 2, 2, 2)
 
@@ -388,30 +402,12 @@ class MainTab(QWidget):
         form = QFormLayout(basic)
         form.setContentsMargins(4, 4, 4, 4)
 
-        self.clean_check = QCheckBox()
-        self.clean_check.setChecked(True)
-        form.addRow("Clean Data:", self.clean_check)
-
-        self.radius_spin = QDoubleSpinBox()
-        self.radius_spin.setRange(0.0001, 0.1)
-        self.radius_spin.setDecimals(4)
-        self.radius_spin.setSingleStep(0.0001)
-        self.radius_spin.setValue(0.002)
-        form.addRow("Search Radius (deg):", self.radius_spin)
-
         self.zoom_spin = QDoubleSpinBox()
         self.zoom_spin.setRange(0.1, 0.9)
         self.zoom_spin.setDecimals(1)
         self.zoom_spin.setSingleStep(0.1)
         self.zoom_spin.setValue(0.5)
         form.addRow("Zoom Scale:", self.zoom_spin)
-
-        self.color_combo = QComboBox()
-        for cs in ColorScale:
-            self.color_combo.addItem(cs.value.capitalize(), cs)
-        self.color_combo.setCurrentText("Turbo")
-        self.color_combo.currentIndexChanged.connect(self._on_live_option_changed)
-        form.addRow("Color Scale:", self.color_combo)
 
         self.display_unit_combo = QComboBox()
         self.display_unit_combo.addItem("Feet", True)
@@ -444,9 +440,11 @@ class MainTab(QWidget):
         self.class_color_layout.addRow(self._adv_placeholder)
         self.options_tabs.addTab(self._adv_widget, "Advanced")
 
-        # No separate class_color_group needed anymore
         self.class_color_group = QWidget()
         self.class_color_group.setVisible(False)
+
+        # Keep color_combo reference for _get_options (default colorscale)
+        self.color_combo = None
 
         return group
 
@@ -564,7 +562,7 @@ class MainTab(QWidget):
     def _get_options(self) -> QueryOptions:
         return QueryOptions(
             clean_data=self.clean_check.isChecked(),
-            colorscale=self.color_combo.currentData(),
+            colorscale=ColorScale.TURBO,
             filter_ground=False,
             query_radius_deg=self.radius_spin.value(),
             zoom_scale=self.zoom_spin.value(),
