@@ -6,7 +6,7 @@ import logging
 import os
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QSettings, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QSettings, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -501,22 +501,22 @@ class MainTab(QWidget):
     def _on_live_option_changed(self) -> None:
         """Re-render with updated colormaps when color combo changes."""
         if self.embedded_search.is_active:
-            self.embedded_search.set_class_cmaps(self._get_class_cmaps())
+            QTimer.singleShot(0, lambda: self.embedded_search.set_class_cmaps(self._get_class_cmaps()))
 
     def _on_display_unit_changed(self) -> None:
         if self.embedded_search.is_active:
-            self.embedded_search.set_display_feet(self.display_unit_combo.currentData())
+            QTimer.singleShot(0, lambda: self.embedded_search.set_display_feet(self.display_unit_combo.currentData()))
 
     def _on_point_size_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
-            self.embedded_search.set_point_size(value)
+            QTimer.singleShot(0, lambda: self.embedded_search.set_point_size(value))
 
     def _on_bg_changed(self) -> None:
         color = self.bg_combo.currentData()
         if self.embedded_search.is_active:
-            self.embedded_search.set_background(color)
+            QTimer.singleShot(0, lambda: self.embedded_search.set_background(color))
         else:
-            self.plotter.set_background(color)
+            QTimer.singleShot(0, lambda: self.plotter.set_background(color))
 
     def _build_action_group(self) -> QWidget:
         widget = QWidget()
