@@ -215,7 +215,10 @@ class MainTab(QWidget):
         self.mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mode_label.setStyleSheet("font-weight: bold; font-size: 13px;")
 
-        # Result fields
+        # --- Result fields ---
+        result_header = QLabel("Result")
+        result_header.setStyleSheet("font-weight: bold; font-size: 11px; color: #ccc;")
+
         result_fields = QHBoxLayout()
         result_fields.setContentsMargins(0, 0, 0, 0)
 
@@ -243,7 +246,10 @@ class MainTab(QWidget):
         result_fields.addWidget(QLabel("Lon:"))
         result_fields.addWidget(self.result_lon_edit)
 
-        # Info terminal
+        # --- Log ---
+        log_header = QLabel("Log")
+        log_header.setStyleSheet("font-weight: bold; font-size: 11px; color: #ccc;")
+
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
         self.results_text.setMaximumHeight(120)
@@ -279,7 +285,9 @@ class MainTab(QWidget):
         right_layout.addWidget(self.mode_label)
         right_layout.addLayout(viewer_row, stretch=1)
         right_layout.addLayout(btn_bar)
+        right_layout.addWidget(result_header)
         right_layout.addLayout(result_fields)
+        right_layout.addWidget(log_header)
         right_layout.addWidget(self.results_text)
 
         # Main splitter
