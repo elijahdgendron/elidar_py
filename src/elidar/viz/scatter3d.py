@@ -600,19 +600,23 @@ class EmbeddedSearch:
                 from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
                 cls_name = ASPRS_CLASSIFICATION_NAMES.get(int(cls), f"Class {cls}")
 
-                self.plotter.add_points(
-                    pd,
-                    scalars="elevation",
-                    cmap=cmap,
-                    clim=[z_min, z_max],
-                    point_size=5,
-                    render_points_as_spheres=True,
-                    scalar_bar_args={
-                        "title": f"{cls_name} ({unit})",
+                add_kwargs: dict = {
+                    "scalars": "elevation",
+                    "cmap": cmap,
+                    "clim": [z_min, z_max],
+                    "point_size": 5,
+                    "render_points_as_spheres": True,
+                }
+                if first:
+                    add_kwargs["scalar_bar_args"] = {
+                        "title": f"Elevation ({unit})",
                         "n_labels": 2,
                         "fmt": "%.0f",
-                    } if first else False,
-                )
+                    }
+                else:
+                    add_kwargs["show_scalar_bar"] = False
+
+                self.plotter.add_points(pd, **add_kwargs)
                 first = False
         else:
             cmap = get_colormap(self._options.colorscale)
