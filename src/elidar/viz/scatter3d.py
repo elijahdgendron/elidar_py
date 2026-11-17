@@ -410,6 +410,7 @@ class EmbeddedSearch:
         self._polydatas: list[pv.PolyData] = []
         self._class_cmaps: dict[int, ColorScale] = {}
         self._class_actors: dict[int, object] = {}
+        self._visible_classes: set[int] | None = None
         self._polydata: pv.PolyData | None = None
 
     @property
@@ -427,6 +428,7 @@ class EmbeddedSearch:
         options: QueryOptions,
         display_feet: bool = False,
         class_cmaps: dict[int, ColorScale] | None = None,
+        visible_classes: set[int] | None = None,
     ) -> None:
         """Load a point cloud and render it.
 
@@ -435,6 +437,7 @@ class EmbeddedSearch:
         :param options: Query options.
         :param display_feet: If True, display in feet instead of meters.
         :param class_cmaps: Per-classification colormap overrides.
+        :param visible_classes: Set of classification codes to display. None = all.
         """
         self._working_cloud = cloud
         self._options = options
@@ -446,6 +449,7 @@ class EmbeddedSearch:
         self._display_feet = display_feet
         self._unit_scale = M2FT if display_feet else 1.0
         self._class_cmaps = class_cmaps if class_cmaps is not None else {}
+        self._visible_classes = visible_classes
         self._render()
 
     def zoom(self) -> None:
@@ -551,13 +555,19 @@ class EmbeddedSearch:
     def set_class_visible(self, cls: int, visible: bool) -> None:
         """Toggle visibility of a classification's points.
 
+        Re-renders so the subsample is drawn from only visible classes.
+
         :param cls: Classification code.
         :param visible: Whether to show or hide.
         """
-        actor = self._class_actors.get(cls)
-        if actor is not None:
-            actor.SetVisibility(visible)
-            self.plotter.render()
+        if self._visible_classes is None:
+            self._visible_classes = set()
+        if visible:
+            self._visible_classes.add(cls)
+        else:
+            self._visible_classes.discard(cls)
+        if self._active and self._working_cloud is not None:
+            self._render()
 
     def set_point_size(self, size: int) -> None:
         """Update point size for all actors in place.
@@ -590,11 +600,22 @@ class EmbeddedSearch:
 
     def _render(self) -> None:
         """Re-render the current working cloud into the plotter."""
-        self._is_subsampled = self._working_cloud.n_points > DISPLAY_THRESHOLD
+        # Filter to visible classes before subsampling so minority classes
+        # (like Ground at 0.005%) aren't drowned out by the random subsample.
+        render_cloud = self._working_cloud
+        if (
+            self._visible_classes is not None
+            and render_cloud.classification is not None
+        ):
+            vis_mask = np.isin(render_cloud.classification, list(self._visible_classes))
+            if np.any(vis_mask):
+                render_cloud = render_cloud.subset(vis_mask)
+
+        self._is_subsampled = render_cloud.n_points > DISPLAY_THRESHOLD
         if self._is_subsampled:
-            self._display_cloud = _subsample(self._working_cloud, DISPLAY_THRESHOLD)
+            self._display_cloud = _subsample(render_cloud, DISPLAY_THRESHOLD)
         else:
-            self._display_cloud = self._working_cloud
+            self._display_cloud = render_cloud
 
         cloud = self._display_cloud
         s = self._unit_scale

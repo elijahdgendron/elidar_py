@@ -618,16 +618,17 @@ class MainTab(QWidget):
         options = self._get_options()
         display_feet = self.display_unit_combo.currentData()
         class_cmaps = self._get_class_cmaps()
+        visible_classes = {
+            cls for cls, check in self._class_visible_checks.items()
+            if check.isChecked()
+        }
         self.viewer_stack.setCurrentIndex(1)
         self.embedded_search.load(
             cloud, crs_info, options,
             display_feet=display_feet,
             class_cmaps=class_cmaps,
+            visible_classes=visible_classes,
         )
-
-        # Apply default visibility (only Ground shown)
-        for cls, check in self._class_visible_checks.items():
-            self.embedded_search.set_class_visible(cls, check.isChecked())
 
         self._set_search_controls(True)
         self._update_mode_label()
