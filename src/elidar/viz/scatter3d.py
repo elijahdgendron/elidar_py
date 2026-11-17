@@ -25,7 +25,7 @@ import numpy as np
 import pyvista as pv
 
 from elidar.core.crs import CrsInfo, make_transformer
-from elidar.core.types import ColorScale, M2FT, PointCloudData, QueryOptions
+from elidar.core.types import ColorScale, DEFAULT_CMAP, DEFAULT_CLASS_CMAPS, M2FT, PointCloudData, QueryOptions
 from elidar.viz.colormaps import get_colormap
 
 logger = logging.getLogger(__name__)
@@ -405,7 +405,9 @@ class EmbeddedSearch:
         self._unit_scale: float = 1.0
         self._z_exaggeration: float = 1.0
         self._base_plot_z: np.ndarray | None = None
-        self._polydata: pv.PolyData | None = None
+        self._polydatas: list[pv.PolyData] = []
+        self._class_cmaps: dict[int, ColorScale] = {}
+        self._polydata: pv.PolyData | None = None  # kept for single-mesh compat
 
     @property
     def is_active(self) -> bool:
@@ -421,6 +423,7 @@ class EmbeddedSearch:
         crs_info: CrsInfo,
         options: QueryOptions,
         display_feet: bool = False,
+        class_cmaps: dict[int, ColorScale] | None = None,
     ) -> None:
         """Load a point cloud and render it.
 
@@ -428,6 +431,7 @@ class EmbeddedSearch:
         :param crs_info: CRS info for display.
         :param options: Query options.
         :param display_feet: If True, display in feet instead of meters.
+        :param class_cmaps: Per-classification colormap overrides.
         """
         self._working_cloud = cloud
         self._options = options
@@ -438,6 +442,7 @@ class EmbeddedSearch:
         self._active = True
         self._display_feet = display_feet
         self._unit_scale = M2FT if display_feet else 1.0
+        self._class_cmaps = class_cmaps if class_cmaps is not None else {}
         self._render()
 
     def zoom(self) -> None:
@@ -512,6 +517,7 @@ class EmbeddedSearch:
         self._picked_point = None
         self._pick_idx = None
         self._polydata = None
+        self._polydatas = []
         self._base_plot_z = None
         self.plotter.clear()
         self.plotter.render()
@@ -522,13 +528,17 @@ class EmbeddedSearch:
         :param factor: Multiplier for the Z axis (1.0 = no exaggeration).
         """
         self._z_exaggeration = factor
-        if self._polydata is None or self._base_plot_z is None:
+        if self._base_plot_z is None:
             return
 
         new_z = self._base_plot_z * factor
-        pts = self._polydata.points.copy()
-        pts[:, 2] = new_z
-        self._polydata.points = pts
+        offset = 0
+        for pd in self._polydatas:
+            n = pd.n_points
+            pts = pd.points.copy()
+            pts[:, 2] = new_z[offset:offset + n]
+            pd.points = pts
+            offset += n
         self.plotter.reset_camera()
         self.plotter.render()
 
@@ -553,27 +563,76 @@ class EmbeddedSearch:
         self._base_plot_z = cloud.z.astype(np.float64) * s
         plot_z = self._base_plot_z * self._z_exaggeration
 
-        points = np.column_stack([self._display_x, self._display_y, plot_z])
-        self._polydata = pv.PolyData(points)
-        self._polydata["elevation"] = self._base_plot_z
-        polydata = self._polydata
-
-        cmap = get_colormap(self._options.colorscale)
-
         self.plotter.disable_picking()
         self.plotter.clear()
-        self.plotter.add_points(
-            polydata,
-            scalars="elevation",
-            cmap=cmap,
-            point_size=5,
-            render_points_as_spheres=True,
-            scalar_bar_args={
-                "title": f"Elevation ({unit})",
-                "n_labels": 2,
-                "fmt": "%.0f",
-            },
+        self._polydatas = []
+
+        # Global elevation range for consistent colorbar across classes
+        z_min, z_max = float(self._base_plot_z.min()), float(self._base_plot_z.max())
+
+        # Split by classification if we have classification data and class cmaps
+        has_classes = (
+            cloud.classification is not None
+            and len(self._class_cmaps) > 0
         )
+
+        if has_classes:
+            unique_classes = np.unique(cloud.classification)
+            first = True
+            for cls in unique_classes:
+                mask = cloud.classification == cls
+                if not np.any(mask):
+                    continue
+
+                cmap_enum = self._class_cmaps.get(cls, DEFAULT_CMAP)
+                cmap = get_colormap(cmap_enum)
+
+                px = self._display_x[mask]
+                py = self._display_y[mask]
+                pz = plot_z[mask]
+                elev = self._base_plot_z[mask]
+
+                pts = np.column_stack([px, py, pz])
+                pd = pv.PolyData(pts)
+                pd["elevation"] = elev
+                self._polydatas.append(pd)
+
+                from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
+                cls_name = ASPRS_CLASSIFICATION_NAMES.get(int(cls), f"Class {cls}")
+
+                self.plotter.add_points(
+                    pd,
+                    scalars="elevation",
+                    cmap=cmap,
+                    clim=[z_min, z_max],
+                    point_size=5,
+                    render_points_as_spheres=True,
+                    scalar_bar_args={
+                        "title": f"{cls_name} ({unit})",
+                        "n_labels": 2,
+                        "fmt": "%.0f",
+                    } if first else False,
+                )
+                first = False
+        else:
+            cmap = get_colormap(self._options.colorscale)
+            pts = np.column_stack([self._display_x, self._display_y, plot_z])
+            pd = pv.PolyData(pts)
+            pd["elevation"] = self._base_plot_z
+            self._polydatas.append(pd)
+
+            self.plotter.add_points(
+                pd,
+                scalars="elevation",
+                cmap=cmap,
+                point_size=5,
+                render_points_as_spheres=True,
+                scalar_bar_args={
+                    "title": f"Elevation ({unit})",
+                    "n_labels": 2,
+                    "fmt": "%.0f",
+                },
+            )
 
         self.plotter.add_axes(
             xlabel="N",

@@ -29,6 +29,37 @@ class ColorScale(str, Enum):
 
 
 M2FT = 3.2808398950131233
+
+ASPRS_CLASSIFICATION_NAMES: dict[int, str] = {
+    0: "Never Classified",
+    1: "Unclassified",
+    2: "Ground",
+    3: "Low Vegetation",
+    4: "Medium Vegetation",
+    5: "High Vegetation",
+    6: "Building",
+    7: "Low Point (Noise)",
+    8: "Model Key-point",
+    9: "Water",
+    10: "Rail",
+    11: "Road Surface",
+    12: "Overlap",
+    13: "Wire - Guard",
+    14: "Wire - Conductor",
+    15: "Transmission Tower",
+    16: "Wire - Connector",
+    17: "Bridge Deck",
+    18: "High Noise",
+}
+
+DEFAULT_CLASS_CMAPS: dict[int, ColorScale] = {
+    0: ColorScale.GREYSCALE,
+    1: ColorScale.GREYSCALE,
+    2: ColorScale.TURBO,
+    7: ColorScale.WINTER,
+    18: ColorScale.WINTER,
+}
+DEFAULT_CMAP = ColorScale.JET
 US_SURVEY_FOOT_TO_M = 0.30480060960121924
 INTL_FOOT_TO_M = 0.3048
 

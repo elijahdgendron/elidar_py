@@ -30,7 +30,16 @@ from PyQt6.QtWidgets import (
 )
 from pyvistaqt import QtInteractor
 
-from elidar.core.types import ColorScale, M2FT, QueryOptions, QueryResult, QueryType
+from elidar.core.types import (
+    ASPRS_CLASSIFICATION_NAMES,
+    ColorScale,
+    DEFAULT_CLASS_CMAPS,
+    DEFAULT_CMAP,
+    M2FT,
+    QueryOptions,
+    QueryResult,
+    QueryType,
+)
 from elidar.viz.scatter3d import EmbeddedSearch, PickResult
 
 logger = logging.getLogger(__name__)
@@ -147,6 +156,7 @@ class MainTab(QWidget):
         left_layout.addWidget(self._build_file_group())
         left_layout.addWidget(self._build_query_group())
         left_layout.addWidget(self._build_options_group())
+        left_layout.addWidget(self.class_color_group)
         left_layout.addWidget(self._build_action_group())
         left_layout.addStretch()
 
@@ -355,7 +365,7 @@ class MainTab(QWidget):
         for cs in ColorScale:
             self.color_combo.addItem(cs.value.capitalize(), cs)
         self.color_combo.setCurrentText("Turbo")
-        form.addRow("Color Scale:", self.color_combo)
+        form.addRow("Default Color:", self.color_combo)
 
         self.unit_combo = QComboBox()
         self.unit_combo.addItem("Auto", None)
@@ -364,11 +374,42 @@ class MainTab(QWidget):
         form.addRow("Force Unit:", self.unit_combo)
 
         self.display_unit_combo = QComboBox()
-        self.display_unit_combo.addItem("Meters", False)
         self.display_unit_combo.addItem("Feet", True)
+        self.display_unit_combo.addItem("Meters", False)
         form.addRow("Display In:", self.display_unit_combo)
 
+        # Per-classification color mapping (populated after data loads)
+        self._class_color_combos: dict[int, QComboBox] = {}
+        self.class_color_group = QGroupBox("Classification Colors")
+        self.class_color_layout = QFormLayout(self.class_color_group)
+        self.class_color_group.setVisible(False)
+
         return group
+
+    def _populate_class_colors(self, classifications: list[int]) -> None:
+        """Build per-classification colormap dropdowns from detected classes."""
+        # Clear existing
+        while self.class_color_layout.rowCount() > 0:
+            self.class_color_layout.removeRow(0)
+        self._class_color_combos.clear()
+
+        for cls in sorted(classifications):
+            combo = QComboBox()
+            for cs in ColorScale:
+                combo.addItem(cs.value.capitalize(), cs)
+
+            default = DEFAULT_CLASS_CMAPS.get(cls, DEFAULT_CMAP)
+            combo.setCurrentText(default.value.capitalize())
+
+            name = ASPRS_CLASSIFICATION_NAMES.get(cls, f"Class {cls}")
+            self._class_color_combos[cls] = combo
+            self.class_color_layout.addRow(f"{name}:", combo)
+
+        self.class_color_group.setVisible(len(classifications) > 0)
+
+    def _get_class_cmaps(self) -> dict[int, ColorScale]:
+        """Read the current per-classification colormap selections."""
+        return {cls: combo.currentData() for cls, combo in self._class_color_combos.items()}
 
     def _build_action_group(self) -> QWidget:
         widget = QWidget()
@@ -477,10 +518,23 @@ class MainTab(QWidget):
         self.analyze_btn.setEnabled(True)
         self.analyze_btn.setText("Analyze")
 
+        # Populate classification color dropdowns from detected classes
+        import numpy as np
+        if cloud.classification is not None:
+            unique_cls = sorted(int(c) for c in np.unique(cloud.classification))
+        else:
+            unique_cls = []
+        self._populate_class_colors(unique_cls)
+
         options = self._get_options()
         display_feet = self.display_unit_combo.currentData()
+        class_cmaps = self._get_class_cmaps()
         self.viewer_stack.setCurrentIndex(1)
-        self.embedded_search.load(cloud, crs_info, options, display_feet=display_feet)
+        self.embedded_search.load(
+            cloud, crs_info, options,
+            display_feet=display_feet,
+            class_cmaps=class_cmaps,
+        )
 
         self._set_search_controls(True)
         self._update_mode_label()
