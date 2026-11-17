@@ -80,13 +80,8 @@ def interactive_search(
     """
     state = _PickState()
 
-    # Determine zoom radius in native CRS units (matches MATLAB lines 264-272)
-    if crs_info.is_geographic:
-        zoom_radius = options.query_radius_deg / 2
-    elif crs_info.is_foot:
-        zoom_radius = 100 * M2FT
-    else:
-        zoom_radius = 100.0
+    # Zoom radius in degrees (cloud coordinates are always lat/lon after merge)
+    zoom_radius = options.query_radius_deg / 2
 
     working_cloud = cloud
 
@@ -104,7 +99,7 @@ def interactive_search(
             return None
 
         # Find the index of the picked point in the working cloud
-        pick_idx = _find_picked_index(working_cloud, state.picked_point, options.display_lla)
+        pick_idx = _find_picked_index(working_cloud, state.picked_point)
 
         if state.action == _UserAction.DONE:
             logger.info(
@@ -122,12 +117,12 @@ def interactive_search(
                 index=pick_idx,
             )
 
-        # ZOOM: crop around picked point in native CRS coordinates
+        # ZOOM: crop around picked point in lat/lon space
         zoom_radius *= options.zoom_scale
-        cx = working_cloud.x[pick_idx]
-        cy = working_cloud.y[pick_idx]
+        clat = working_cloud.lat[pick_idx]
+        clon = working_cloud.lon[pick_idx]
         dist = np.sqrt(
-            (working_cloud.x - cx) ** 2 + (working_cloud.y - cy) ** 2
+            (working_cloud.lat - clat) ** 2 + (working_cloud.lon - clon) ** 2
         )
         mask = dist <= zoom_radius
         working_cloud = working_cloud.subset(mask)
@@ -137,7 +132,7 @@ def interactive_search(
             return None
 
         logger.info(
-            "Zoomed: radius=%.2f, %d points remaining",
+            "Zoomed: radius=%.6f deg, %d points remaining",
             zoom_radius,
             working_cloud.n_points,
         )
@@ -156,19 +151,14 @@ def _show_plotter(
     :param options: Display options.
     :param state: Mutable state for pick tracking.
     """
-    # Build display coordinates
-    if options.display_lla and len(cloud.lat) > 0:
-        plot_x = cloud.lat.copy()
-        plot_y = cloud.lon.copy()
-        x_label = "Latitude (deg)"
-        y_label = "Longitude (deg)"
-    else:
-        plot_x = cloud.x.copy()
-        plot_y = cloud.y.copy()
-        x_label = "X (increases East)"
-        y_label = "Y (increases North)"
-
-    z_label = "Altitude (ft)" if crs_info.is_foot else "Altitude (m)"
+    # Display is always lat/lon since the merge step normalizes coordinates
+    plot_x = cloud.lat.copy()
+    plot_y = cloud.lon.copy()
+    x_label = "Latitude (deg)"
+    y_label = "Longitude (deg)"
+    # Z is always meters internally; label based on original data unit
+    original_ft = getattr(crs_info, "_original_is_foot", False)
+    z_label = "Altitude (m)"
 
     points = np.column_stack([plot_x, plot_y, cloud.z.astype(np.float64)])
     polydata = pv.PolyData(points)
@@ -259,11 +249,8 @@ def _add_instructions(plotter: pv.Plotter, n_points: int) -> None:
 
 def _update_status(plotter: pv.Plotter, point: np.ndarray, crs_info: CrsInfo) -> None:
     """Update the status text after a point is picked."""
-    z_val = point[2]
-    if crs_info.is_foot:
-        elev_str = f"{z_val:.2f} ft ({z_val / M2FT:.2f} m)"
-    else:
-        elev_str = f"{z_val:.2f} m ({z_val * M2FT:.2f} ft)"
+    z_m = point[2]
+    elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
 
     status = f"Selected: ({point[0]:.6f}, {point[1]:.6f})  Elev: {elev_str}"
     plotter.add_text(
@@ -291,25 +278,18 @@ def _flash_message(plotter: pv.Plotter, message: str) -> None:
 def _find_picked_index(
     cloud: PointCloudData,
     picked_point: np.ndarray,
-    display_lla: bool,
 ) -> int:
     """Find the index of the picked point in the point cloud.
 
+    The display coordinates are (lat, lon, z) matching the cloud's arrays.
+
     :param cloud: The point cloud being displayed.
-    :param picked_point: The 3D coordinates of the picked point (in display space).
-    :param display_lla: Whether the display was in lat/lon coordinates.
+    :param picked_point: The 3D coordinates from the plotter (lat, lon, z).
     :return: Index into the cloud arrays.
     """
-    if display_lla and len(cloud.lat) > 0:
-        dist = (
-            (cloud.lat - picked_point[0]) ** 2
-            + (cloud.lon - picked_point[1]) ** 2
-            + (cloud.z - picked_point[2]) ** 2
-        )
-    else:
-        dist = (
-            (cloud.x - picked_point[0]) ** 2
-            + (cloud.y - picked_point[1]) ** 2
-            + (cloud.z - picked_point[2]) ** 2
-        )
+    dist = (
+        (cloud.lat - picked_point[0]) ** 2
+        + (cloud.lon - picked_point[1]) ** 2
+        + (cloud.z - picked_point[2]) ** 2
+    )
     return int(np.argmin(dist))

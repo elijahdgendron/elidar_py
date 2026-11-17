@@ -60,7 +60,7 @@ def _add_query_parser(subparsers: argparse._SubParsersAction, name: str, help_te
     p = subparsers.add_parser(name, help=help_text)
     p.add_argument("--lat", type=float, required=True, help="Latitude in degrees")
     p.add_argument("--lon", type=float, required=True, help="Longitude in degrees")
-    p.add_argument("--las", type=str, required=True, help="Path to LAS/LAZ file")
+    p.add_argument("--las", type=str, required=True, nargs="+", help="Path(s) to LAS/LAZ file(s)")
     p.add_argument("--dem", type=str, default=None, help="Path to DEM file (optional fallback for CRS)")
     p.add_argument("--no-clean", action="store_true", help="Skip point cloud cleaning")
     p.add_argument("--ground-only", action="store_true", help="Filter to ground classification only")

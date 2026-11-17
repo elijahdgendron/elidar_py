@@ -1,10 +1,11 @@
 """Core LiDAR query engine -- port of queryLidar.m.
 
-Loads a LAS/LAZ file, resolves the CRS, reprojects to lat/lon, filters
-and cleans the point cloud, then executes one of three query modes:
+Loads one or more LAS/LAZ files, resolves each file's CRS independently,
+reprojects to lat/lon, normalizes elevation to meters, filters and cleans
+the merged point cloud, then executes one of three query modes:
   - peak: find the local maximum elevation
   - point: find the closest LiDAR return to the query location
-  - search: interactive 3D point picking (Phase 2)
+  - search: interactive 3D point picking
 """
 
 from __future__ import annotations
@@ -33,19 +34,23 @@ def query_lidar(
     query_lat: float,
     query_lon: float,
     query_type: QueryType | str,
-    las_path: str | Path,
+    las_path: str | Path | list[str | Path],
     options: QueryOptions | None = None,
 ) -> QueryResult | None:
-    """Query a LiDAR dataset at or around a geographic point.
+    """Query one or more LiDAR datasets at or around a geographic point.
+
+    When multiple files are provided, each is loaded and reprojected
+    independently (they may have different CRS), then merged before
+    querying. Elevations are normalized to meters internally.
 
     :param query_lat: Latitude of query in degrees (-90 to 90).
     :param query_lon: Longitude of query in degrees (-180 to 180).
     :param query_type: Query algorithm ("peak", "point", or "search").
-    :param las_path: Path to LAS/LAZ file.
+    :param las_path: Path(s) to LAS/LAZ file(s). Single path or list.
     :param options: Query configuration. Uses defaults if None.
     :return: QueryResult with elevation and position, or None if cancelled/no data.
-    :raises FileNotFoundError: If the LAS file does not exist.
-    :raises ValueError: If CRS cannot be determined.
+    :raises FileNotFoundError: If any LAS file does not exist.
+    :raises ValueError: If CRS cannot be determined for any file.
     """
     if options is None:
         options = QueryOptions()
@@ -53,24 +58,10 @@ def query_lidar(
     if isinstance(query_type, str):
         query_type = QueryType(query_type.lower())
 
-    las_path = Path(las_path)
-    if not las_path.exists():
-        raise FileNotFoundError(f"LAS file not found: {las_path}")
-    if las_path.suffix.lower() not in (".las", ".laz"):
-        raise ValueError(f"Expected .las or .laz file, got: {las_path.suffix}")
+    paths = _normalize_paths(las_path)
 
-    crs_info = resolve_crs(las_path, dem_path=options.dem_path, force_unit=options.force_unit)
-    logger.info(
-        "CRS resolved: source=%s, unit=%s, geographic=%s",
-        crs_info.source,
-        crs_info.unit_name,
-        crs_info.is_geographic,
-    )
-
-    cloud = _read_point_cloud(las_path, filter_ground=options.filter_ground)
-    logger.info("Loaded %d points from %s", cloud.n_points, las_path.name)
-
-    cloud = _reproject(cloud, crs_info)
+    cloud, display_crs = _load_and_merge(paths, options)
+    logger.info("Total loaded: %d points from %d file(s)", cloud.n_points, len(paths))
 
     if options.center:
         query_lat = float(np.mean(cloud.lat))
@@ -84,26 +75,125 @@ def query_lidar(
 
     logger.info("Points within query radius: %d", cloud.n_points)
 
-    if options.clean_data and not crs_info.is_geographic:
-        # MATLAB uses 0.01 meters for voxel dedup; scale to native units
-        voxel_m = 0.01
-        voxel_native = voxel_m / crs_info.unit_to_meters if crs_info.is_foot else voxel_m
+    if options.clean_data:
         cloud = cleaning.clean(
             cloud,
             num_neighbors=options.filter_num_neighbors,
             std_ratio=options.filter_threshold,
-            voxel_size=voxel_native,
+            voxel_size=0.01,
         )
         logger.info("After cleaning: %d points", cloud.n_points)
 
     if query_type == QueryType.PEAK:
-        return _query_peak(cloud, crs_info)
+        return _query_peak(cloud, display_crs)
     elif query_type == QueryType.POINT:
-        return _query_point(cloud, crs_info, query_lat, query_lon)
+        return _query_point(cloud, display_crs, query_lat, query_lon)
     elif query_type == QueryType.SEARCH:
-        return _query_search(cloud, crs_info, options)
+        return _query_search(cloud, display_crs, options)
     else:
         raise ValueError(f"Unknown query type: {query_type}")
+
+
+def _normalize_paths(las_path: str | Path | list[str | Path]) -> list[Path]:
+    """Validate and normalize file path(s).
+
+    :param las_path: Single path or list of paths.
+    :return: List of validated Path objects.
+    """
+    if isinstance(las_path, (str, Path)):
+        paths = [Path(las_path)]
+    else:
+        paths = [Path(p) for p in las_path]
+
+    for p in paths:
+        if not p.exists():
+            raise FileNotFoundError(f"LAS file not found: {p}")
+        if p.suffix.lower() not in (".las", ".laz"):
+            raise ValueError(f"Expected .las or .laz file, got: {p.suffix}")
+
+    return paths
+
+
+def _load_and_merge(
+    paths: list[Path],
+    options: QueryOptions,
+) -> tuple[PointCloudData, CrsInfo]:
+    """Load one or more LAS/LAZ files and merge into a single cloud.
+
+    Each file is read with its own CRS, reprojected to lat/lon, and
+    elevation is normalized to meters. The merged cloud uses lat/lon as
+    its x/y coordinates.
+
+    :param paths: List of LAS/LAZ file paths.
+    :param options: Query options (for filter_ground, dem_path, force_unit).
+    :return: Tuple of (merged PointCloudData in meters, CrsInfo for display).
+    """
+    all_lat: list[np.ndarray] = []
+    all_lon: list[np.ndarray] = []
+    all_z_m: list[np.ndarray] = []
+    all_cls: list[np.ndarray] = []
+    all_int: list[np.ndarray] = []
+    has_cls = True
+    has_int = True
+    single_crs: CrsInfo | None = None
+
+    for p in paths:
+        crs_info = resolve_crs(p, dem_path=options.dem_path, force_unit=options.force_unit)
+        logger.info("  %s: CRS=%s, unit=%s", p.name, crs_info.source, crs_info.unit_name)
+
+        cloud = _read_point_cloud(p, filter_ground=options.filter_ground)
+        logger.info("  %s: %d points loaded", p.name, cloud.n_points)
+
+        cloud = _reproject(cloud, crs_info)
+
+        # Normalize Z to meters
+        if crs_info.is_foot:
+            z_m = cloud.z.astype(np.float64) * crs_info.unit_to_meters
+        else:
+            z_m = cloud.z.astype(np.float64)
+
+        all_lat.append(cloud.lat)
+        all_lon.append(cloud.lon)
+        all_z_m.append(z_m)
+
+        if cloud.classification is not None:
+            all_cls.append(cloud.classification)
+        else:
+            has_cls = False
+        if cloud.intensity is not None:
+            all_int.append(cloud.intensity)
+        else:
+            has_int = False
+
+        # For single-file case, keep the original CRS for display
+        if len(paths) == 1:
+            single_crs = crs_info
+
+    lat = np.concatenate(all_lat)
+    lon = np.concatenate(all_lon)
+    z_m = np.concatenate(all_z_m)
+
+    merged = PointCloudData(
+        x=lat,
+        y=lon,
+        z=z_m,
+        lat=lat,
+        lon=lon,
+        classification=np.concatenate(all_cls) if has_cls else None,
+        intensity=np.concatenate(all_int) if has_int else None,
+    )
+
+    # Z is always meters after merge; track original unit for axis labeling
+    original_is_foot = single_crs.is_foot if single_crs is not None else False
+    display_crs = CrsInfo(
+        crs=None,
+        unit_name="metre",
+        is_geographic=True,
+        source=single_crs.source if single_crs is not None else "merged",
+    )
+    display_crs._original_is_foot = original_is_foot
+
+    return merged, display_crs
 
 
 def _read_point_cloud(
@@ -191,36 +281,35 @@ def _spatial_filter(
 
 
 def _elevation_to_result(
-    z_native: float,
-    x_local: float,
-    y_local: float,
+    z_value: float,
     lat: float,
     lon: float,
     crs_info: CrsInfo,
     query_type: QueryType,
 ) -> QueryResult:
-    """Convert a native-unit elevation to a QueryResult with both m and ft.
+    """Convert an elevation to a QueryResult with both m and ft.
 
-    :param z_native: Elevation in the file's native unit.
-    :param x_local: X coordinate in the file's native CRS.
-    :param y_local: Y coordinate in the file's native CRS.
+    For single-file queries the z_value is in the file's native unit.
+    For multi-file merges the z_value is already in meters.
+
+    :param z_value: Elevation value.
     :param lat: Latitude in degrees.
     :param lon: Longitude in degrees.
-    :param crs_info: CRS info for unit conversion.
+    :param crs_info: CRS info for unit interpretation and display.
     :param query_type: The query mode that produced this result.
     :return: QueryResult with elevation in both meters and feet.
     """
     if crs_info.is_foot:
-        elevation_ft = float(z_native)
-        elevation_m = float(z_native) * crs_info.unit_to_meters
+        elevation_ft = float(z_value)
+        elevation_m = float(z_value) * crs_info.unit_to_meters
     else:
-        elevation_m = float(z_native)
-        elevation_ft = float(z_native) * M2FT
+        elevation_m = float(z_value)
+        elevation_ft = float(z_value) * M2FT
 
     return QueryResult(
         elevation_m=elevation_m,
         elevation_ft=elevation_ft,
-        location_local=(float(x_local), float(y_local)),
+        location_local=(float(lat), float(lon)),
         location_deg=(float(lat), float(lon)),
         query_type=query_type,
     )
@@ -242,9 +331,7 @@ def _query_peak(cloud: PointCloudData, crs_info: CrsInfo) -> QueryResult:
     )
 
     return _elevation_to_result(
-        z_native=cloud.z[ix],
-        x_local=cloud.x[ix],
-        y_local=cloud.y[ix],
+        z_value=cloud.z[ix],
         lat=cloud.lat[ix],
         lon=cloud.lon[ix],
         crs_info=crs_info,
@@ -277,9 +364,7 @@ def _query_point(
     )
 
     return _elevation_to_result(
-        z_native=cloud.z[ix],
-        x_local=cloud.x[ix],
-        y_local=cloud.y[ix],
+        z_value=cloud.z[ix],
         lat=cloud.lat[ix],
         lon=cloud.lon[ix],
         crs_info=crs_info,
@@ -312,9 +397,7 @@ def _query_search(
         return None
 
     return _elevation_to_result(
-        z_native=pick.z,
-        x_local=pick.x_local,
-        y_local=pick.y_local,
+        z_value=pick.z,
         lat=pick.lat,
         lon=pick.lon,
         crs_info=crs_info,

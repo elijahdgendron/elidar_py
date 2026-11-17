@@ -43,30 +43,29 @@ class TestPickState:
 class TestFindPickedIndex:
     def _make_cloud(self) -> PointCloudData:
         return PointCloudData(
-            x=np.array([100.0, 200.0, 300.0]),
-            y=np.array([400.0, 500.0, 600.0]),
+            x=np.array([38.0, 39.0, 40.0]),
+            y=np.array([-105.0, -106.0, -107.0]),
             z=np.array([1000.0, 2000.0, 3000.0]),
             lat=np.array([38.0, 39.0, 40.0]),
             lon=np.array([-105.0, -106.0, -107.0]),
         )
 
-    def test_find_exact_match_lla(self) -> None:
+    def test_find_exact_match(self) -> None:
         cloud = self._make_cloud()
         picked = np.array([39.0, -106.0, 2000.0])
-        idx = _find_picked_index(cloud, picked, display_lla=True)
+        idx = _find_picked_index(cloud, picked)
         assert idx == 1
 
-    def test_find_exact_match_local(self) -> None:
+    def test_find_last_point(self) -> None:
         cloud = self._make_cloud()
-        picked = np.array([300.0, 600.0, 3000.0])
-        idx = _find_picked_index(cloud, picked, display_lla=False)
+        picked = np.array([40.0, -107.0, 3000.0])
+        idx = _find_picked_index(cloud, picked)
         assert idx == 2
 
     def test_find_nearest_with_noise(self) -> None:
         cloud = self._make_cloud()
-        # Slightly off from point 0
         picked = np.array([38.001, -105.001, 1000.1])
-        idx = _find_picked_index(cloud, picked, display_lla=True)
+        idx = _find_picked_index(cloud, picked)
         assert idx == 0
 
 
