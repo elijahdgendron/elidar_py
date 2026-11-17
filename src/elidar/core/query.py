@@ -80,7 +80,6 @@ def query_lidar(
             cloud,
             num_neighbors=options.filter_num_neighbors,
             std_ratio=options.filter_threshold,
-            voxel_size=0.01,
         )
         logger.info("After cleaning: %d points", cloud.n_points)
 
