@@ -718,21 +718,19 @@ class EmbeddedSearch:
                         "title": f"Elevation ({unit})",
                         "n_labels": 2,
                         "fmt": "%.0f",
-                        "position_x": 0.85,
-                        "width": 0.1,
                     }
                     if dual:
-                        bar_args["position_y"] = 0.52
-                        bar_args["height"] = 0.4
+                        bar_args.update({
+                            "position_x": 0.82,
+                            "width": 0.06,
+                        })
                     add_kwargs["scalar_bar_args"] = bar_args
                 elif cls in present_surface:
                     add_kwargs["scalar_bar_args"] = {
                         "title": "",
                         "n_labels": 0,
-                        "position_x": 0.85,
-                        "width": 0.1,
-                        "position_y": 0.05,
-                        "height": 0.4,
+                        "position_x": 0.90,
+                        "width": 0.06,
                     }
                 else:
                     add_kwargs["show_scalar_bar"] = False
