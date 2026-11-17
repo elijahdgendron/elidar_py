@@ -778,11 +778,15 @@ class MainTab(QWidget):
         else:
             self.result_class_edit.setText("N/A")
 
-        self.result_elev_edit.setText(f"{result.elevation_ft:,.2f} ft  ({result.elevation_m:,.2f} m)")
+        display_feet = self.display_unit_combo.currentData()
+        if display_feet:
+            self.result_elev_edit.setText(f"{result.elevation_ft:,.2f}")
+        else:
+            self.result_elev_edit.setText(f"{result.elevation_m:,.2f}")
         self.result_lat_edit.setText(f"{result.location_deg[0]:.6f}")
         self.result_lon_edit.setText(f"{result.location_deg[1]:.6f}")
 
-        # Log to terminal
+        # Log to terminal (always both units)
         self._log(
             f"[{result.query_type.value.upper()}] "
             f"{result.elevation_ft:,.2f} ft  ({result.elevation_m:,.2f} m)  "
