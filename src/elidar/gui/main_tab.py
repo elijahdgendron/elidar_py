@@ -387,29 +387,41 @@ class MainTab(QWidget):
         return group
 
     def _populate_class_colors(self, classifications: list[int]) -> None:
-        """Build per-classification colormap dropdowns from detected classes."""
-        # Clear existing
+        """Build per-classification colormap dropdowns + visibility checkboxes."""
         while self.class_color_layout.rowCount() > 0:
             self.class_color_layout.removeRow(0)
         self._class_color_combos.clear()
+        self._class_visible_checks: dict[int, QCheckBox] = {}
 
         for cls in sorted(classifications):
+            row = QHBoxLayout()
+
+            check = QCheckBox()
+            check.setChecked(True)
+            check.toggled.connect(lambda checked, c=cls: self._on_class_visibility_toggled(c, checked))
+            self._class_visible_checks[cls] = check
+            row.addWidget(check)
+
             combo = QComboBox()
             for cs in ColorScale:
                 combo.addItem(cs.value.capitalize(), cs)
-
             default = DEFAULT_CLASS_CMAPS.get(cls, DEFAULT_CMAP)
             combo.setCurrentText(default.value.capitalize())
+            self._class_color_combos[cls] = combo
+            row.addWidget(combo, stretch=1)
 
             name = ASPRS_CLASSIFICATION_NAMES.get(cls, f"Class {cls}")
-            self._class_color_combos[cls] = combo
-            self.class_color_layout.addRow(f"{name}:", combo)
+            self.class_color_layout.addRow(f"{name}:", row)
 
         self.class_color_group.setVisible(len(classifications) > 0)
 
     def _get_class_cmaps(self) -> dict[int, ColorScale]:
         """Read the current per-classification colormap selections."""
         return {cls: combo.currentData() for cls, combo in self._class_color_combos.items()}
+
+    def _on_class_visibility_toggled(self, cls: int, visible: bool) -> None:
+        """Toggle visibility of a classification in the 3D view."""
+        self.embedded_search.set_class_visible(cls, visible)
 
     def _build_action_group(self) -> QWidget:
         widget = QWidget()

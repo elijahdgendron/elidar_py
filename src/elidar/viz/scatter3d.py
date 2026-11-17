@@ -407,7 +407,8 @@ class EmbeddedSearch:
         self._base_plot_z: np.ndarray | None = None
         self._polydatas: list[pv.PolyData] = []
         self._class_cmaps: dict[int, ColorScale] = {}
-        self._polydata: pv.PolyData | None = None  # kept for single-mesh compat
+        self._class_actors: dict[int, object] = {}
+        self._polydata: pv.PolyData | None = None
 
     @property
     def is_active(self) -> bool:
@@ -518,6 +519,7 @@ class EmbeddedSearch:
         self._pick_idx = None
         self._polydata = None
         self._polydatas = []
+        self._class_actors = {}
         self._base_plot_z = None
         self.plotter.clear()
         self.plotter.render()
@@ -541,6 +543,17 @@ class EmbeddedSearch:
             offset += n
         self.plotter.reset_camera()
         self.plotter.render()
+
+    def set_class_visible(self, cls: int, visible: bool) -> None:
+        """Toggle visibility of a classification's points.
+
+        :param cls: Classification code.
+        :param visible: Whether to show or hide.
+        """
+        actor = self._class_actors.get(cls)
+        if actor is not None:
+            actor.SetVisibility(visible)
+            self.plotter.render()
 
     def _render(self) -> None:
         """Re-render the current working cloud into the plotter."""
@@ -566,25 +579,30 @@ class EmbeddedSearch:
         self.plotter.disable_picking()
         self.plotter.clear()
         self._polydatas = []
+        self._class_actors = {}
 
-        # Global elevation range for consistent colorbar across classes
         z_min, z_max = float(self._base_plot_z.min()), float(self._base_plot_z.max())
 
-        # Split by classification if we have classification data and class cmaps
         has_classes = (
             cloud.classification is not None
             and len(self._class_cmaps) > 0
         )
 
         if has_classes:
-            unique_classes = np.unique(cloud.classification)
-            first = True
+            from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
+
+            unique_classes = sorted(np.unique(cloud.classification))
+            # Show scalar bar on Ground (2) if present, else first class
+            scalar_bar_cls = unique_classes[0]
+            if 2 in unique_classes:
+                scalar_bar_cls = 2
+
             for cls in unique_classes:
                 mask = cloud.classification == cls
                 if not np.any(mask):
                     continue
 
-                cmap_enum = self._class_cmaps.get(cls, DEFAULT_CMAP)
+                cmap_enum = self._class_cmaps.get(int(cls), DEFAULT_CMAP)
                 cmap = get_colormap(cmap_enum)
 
                 px = self._display_x[mask]
@@ -597,9 +615,6 @@ class EmbeddedSearch:
                 pd["elevation"] = elev
                 self._polydatas.append(pd)
 
-                from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
-                cls_name = ASPRS_CLASSIFICATION_NAMES.get(int(cls), f"Class {cls}")
-
                 add_kwargs: dict = {
                     "scalars": "elevation",
                     "cmap": cmap,
@@ -607,17 +622,18 @@ class EmbeddedSearch:
                     "point_size": 5,
                     "render_points_as_spheres": True,
                 }
-                if first:
+                if cls == scalar_bar_cls:
+                    cls_name = ASPRS_CLASSIFICATION_NAMES.get(int(cls), f"Class {cls}")
                     add_kwargs["scalar_bar_args"] = {
-                        "title": f"Elevation ({unit})",
+                        "title": f"Elevation ({unit}) — {cls_name}",
                         "n_labels": 2,
                         "fmt": "%.0f",
                     }
                 else:
                     add_kwargs["show_scalar_bar"] = False
 
-                self.plotter.add_points(pd, **add_kwargs)
-                first = False
+                actor = self.plotter.add_points(pd, **add_kwargs)
+                self._class_actors[int(cls)] = actor
         else:
             cmap = get_colormap(self._options.colorscale)
             pts = np.column_stack([self._display_x, self._display_y, plot_z])
