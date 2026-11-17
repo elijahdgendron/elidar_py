@@ -403,6 +403,9 @@ class EmbeddedSearch:
         self._active: bool = False
         self._display_feet: bool = False
         self._unit_scale: float = 1.0
+        self._z_exaggeration: float = 1.0
+        self._base_plot_z: np.ndarray | None = None
+        self._polydata: pv.PolyData | None = None
 
     @property
     def is_active(self) -> bool:
@@ -508,7 +511,25 @@ class EmbeddedSearch:
         self._display_cloud = None
         self._picked_point = None
         self._pick_idx = None
+        self._polydata = None
+        self._base_plot_z = None
         self.plotter.clear()
+        self.plotter.render()
+
+    def set_z_exaggeration(self, factor: float) -> None:
+        """Update the vertical exaggeration factor and re-render in place.
+
+        :param factor: Multiplier for the Z axis (1.0 = no exaggeration).
+        """
+        self._z_exaggeration = factor
+        if self._polydata is None or self._base_plot_z is None:
+            return
+
+        new_z = self._base_plot_z * factor
+        pts = self._polydata.points.copy()
+        pts[:, 2] = new_z
+        self._polydata.points = pts
+        self.plotter.reset_camera()
         self.plotter.render()
 
     def _render(self) -> None:
@@ -529,11 +550,13 @@ class EmbeddedSearch:
 
         self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
         self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
-        plot_z = cloud.z.astype(np.float64) * s
+        self._base_plot_z = cloud.z.astype(np.float64) * s
+        plot_z = self._base_plot_z * self._z_exaggeration
 
         points = np.column_stack([self._display_x, self._display_y, plot_z])
-        polydata = pv.PolyData(points)
-        polydata["elevation"] = plot_z
+        self._polydata = pv.PolyData(points)
+        self._polydata["elevation"] = self._base_plot_z
+        polydata = self._polydata
 
         cmap = get_colormap(self._options.colorscale)
 

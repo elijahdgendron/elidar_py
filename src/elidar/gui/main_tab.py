@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSplitter,
     QStackedWidget,
     QTextEdit,
@@ -215,9 +216,35 @@ class MainTab(QWidget):
 
         bottom_layout.addWidget(self._build_prominence_group(), stretch=2)
 
+        # Exaggeration slider (vertical, right of viewer)
+        exag_col = QVBoxLayout()
+        exag_label = QLabel("Z\nExag")
+        exag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        exag_label.setStyleSheet("font-size: 10px;")
+        exag_col.addWidget(exag_label)
+
+        self.exag_slider = QSlider(Qt.Orientation.Vertical)
+        self.exag_slider.setRange(10, 200)
+        self.exag_slider.setValue(10)
+        self.exag_slider.setTickPosition(QSlider.TickPosition.TicksRight)
+        self.exag_slider.setTickInterval(10)
+        self.exag_slider.setFixedWidth(30)
+        self.exag_slider.valueChanged.connect(self._on_exag_changed)
+        exag_col.addWidget(self.exag_slider)
+
+        self.exag_value_label = QLabel("1.0x")
+        self.exag_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.exag_value_label.setStyleSheet("font-size: 10px;")
+        exag_col.addWidget(self.exag_value_label)
+
+        # Viewer row: stack + slider
+        viewer_row = QHBoxLayout()
+        viewer_row.addWidget(self.viewer_stack, stretch=1)
+        viewer_row.addLayout(exag_col)
+
         # Assemble right side
         right_layout.addWidget(self.mode_label)
-        right_layout.addWidget(self.viewer_stack, stretch=1)
+        right_layout.addLayout(viewer_row, stretch=1)
         right_layout.addLayout(btn_bar)
         right_layout.addWidget(bottom)
 
@@ -542,6 +569,11 @@ class MainTab(QWidget):
         self.mode_label.setText("")
         self.viewer_stack.setCurrentIndex(0)
         self.results_text.append("Search cancelled.\n")
+
+    def _on_exag_changed(self, value: int) -> None:
+        factor = value / 10.0
+        self.exag_value_label.setText(f"{factor:.1f}x")
+        self.embedded_search.set_z_exaggeration(factor)
 
     # --- Search callbacks ---
 
