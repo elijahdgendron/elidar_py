@@ -52,20 +52,27 @@ class TestFindPickedIndex:
 
     def test_find_exact_match(self) -> None:
         cloud = self._make_cloud()
-        picked = np.array([39.0, -106.0, 2000.0])
-        idx = _find_picked_index(cloud, picked)
+        # Display arrays in local meters (arbitrary for test)
+        dx = np.array([0.0, 100.0, 200.0])
+        dy = np.array([0.0, -100.0, -200.0])
+        picked = np.array([100.0, -100.0, 2000.0])
+        idx = _find_picked_index(cloud, picked, dx, dy)
         assert idx == 1
 
     def test_find_last_point(self) -> None:
         cloud = self._make_cloud()
-        picked = np.array([40.0, -107.0, 3000.0])
-        idx = _find_picked_index(cloud, picked)
+        dx = np.array([0.0, 100.0, 200.0])
+        dy = np.array([0.0, -100.0, -200.0])
+        picked = np.array([200.0, -200.0, 3000.0])
+        idx = _find_picked_index(cloud, picked, dx, dy)
         assert idx == 2
 
     def test_find_nearest_with_noise(self) -> None:
         cloud = self._make_cloud()
-        picked = np.array([38.001, -105.001, 1000.1])
-        idx = _find_picked_index(cloud, picked)
+        dx = np.array([0.0, 100.0, 200.0])
+        dy = np.array([0.0, -100.0, -200.0])
+        picked = np.array([0.5, 0.5, 1000.1])
+        idx = _find_picked_index(cloud, picked, dx, dy)
         assert idx == 0
 
 

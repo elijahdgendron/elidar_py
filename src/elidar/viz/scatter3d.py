@@ -88,7 +88,7 @@ def interactive_search(
     while True:
         state.reset_for_iteration()
 
-        _show_plotter(working_cloud, crs_info, options, state)
+        display_x, display_y = _show_plotter(working_cloud, crs_info, options, state)
 
         if state.action == _UserAction.CANCEL or state.action == _UserAction.NONE:
             logger.info("Search cancelled")
@@ -98,8 +98,9 @@ def interactive_search(
             logger.warning("No point selected, cancelling")
             return None
 
-        # Find the index of the picked point in the working cloud
-        pick_idx = _find_picked_index(working_cloud, state.picked_point)
+        pick_idx = _find_picked_index(
+            working_cloud, state.picked_point, display_x, display_y
+        )
 
         if state.action == _UserAction.DONE:
             logger.info(
@@ -143,7 +144,7 @@ def _show_plotter(
     crs_info: CrsInfo,
     options: QueryOptions,
     state: _PickState,
-) -> None:
+) -> tuple[np.ndarray, np.ndarray]:
     """Create and show the pyvista plotter, blocking until the user acts.
 
     :param cloud: Point cloud to display.
@@ -151,18 +152,20 @@ def _show_plotter(
     :param options: Display options.
     :param state: Mutable state for pick tracking.
     """
-    # Display is always lat/lon since the merge step normalizes coordinates
-    plot_x = cloud.lat.copy()
-    plot_y = cloud.lon.copy()
-    x_label = "Latitude (deg)"
-    y_label = "Longitude (deg)"
-    # Z is always meters internally; label based on original data unit
-    original_ft = getattr(crs_info, "_original_is_foot", False)
-    z_label = "Altitude (m)"
+    # Convert lat/lon to local meters so horizontal and vertical scales
+    # are comparable and the plot shows actual terrain shape.
+    center_lat = float(np.mean(cloud.lat))
+    center_lon = float(np.mean(cloud.lon))
+    m_per_deg_lat = 111_320.0
+    m_per_deg_lon = 111_320.0 * np.cos(np.radians(center_lat))
 
-    points = np.column_stack([plot_x, plot_y, cloud.z.astype(np.float64)])
+    plot_x = (cloud.lat - center_lat) * m_per_deg_lat
+    plot_y = (cloud.lon - center_lon) * m_per_deg_lon
+    plot_z = cloud.z.astype(np.float64)
+
+    points = np.column_stack([plot_x, plot_y, plot_z])
     polydata = pv.PolyData(points)
-    polydata["elevation"] = cloud.z.astype(np.float64)
+    polydata["elevation"] = plot_z
 
     cmap = get_colormap(options.colorscale)
 
@@ -176,19 +179,26 @@ def _show_plotter(
         render_points_as_spheres=True,
     )
 
-    plotter.add_axes_at_origin(labels_off=True)
     plotter.add_axes(
-        xlabel=x_label,
-        ylabel=y_label,
-        zlabel=z_label,
+        xlabel="South-North (m)",
+        ylabel="West-East (m)",
+        zlabel="Altitude (m)",
     )
+
+    # Set camera looking down at an angle with Z pointing up
+    plotter.camera_position = "xz"
+    plotter.camera.elevation = 25
+    plotter.camera.azimuth = -60
 
     _add_instructions(plotter, cloud.n_points)
 
-    # Point picking callback
+    # Point picking callback -- convert display coords back to lat/lon for status
     def on_pick(point: np.ndarray) -> None:
         state.picked_point = point
-        _update_status(plotter, point, crs_info)
+        real_lat = point[0] / m_per_deg_lat + center_lat
+        real_lon = point[1] / m_per_deg_lon + center_lon
+        z_m = point[2]
+        _update_status(plotter, real_lat, real_lon, z_m)
 
     plotter.enable_point_picking(
         callback=on_pick,
@@ -227,6 +237,8 @@ def _show_plotter(
 
     plotter.show()
 
+    return plot_x, plot_y
+
 
 def _add_instructions(plotter: pv.Plotter, n_points: int) -> None:
     """Add instruction text overlay to the plotter."""
@@ -247,12 +259,10 @@ def _add_instructions(plotter: pv.Plotter, n_points: int) -> None:
     )
 
 
-def _update_status(plotter: pv.Plotter, point: np.ndarray, crs_info: CrsInfo) -> None:
+def _update_status(plotter: pv.Plotter, lat: float, lon: float, z_m: float) -> None:
     """Update the status text after a point is picked."""
-    z_m = point[2]
     elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
-
-    status = f"Selected: ({point[0]:.6f}, {point[1]:.6f})  Elev: {elev_str}"
+    status = f"Selected: {lat:.6f}°N, {lon:.6f}°W  Elev: {elev_str}"
     plotter.add_text(
         status,
         position="lower_left",
@@ -277,19 +287,21 @@ def _flash_message(plotter: pv.Plotter, message: str) -> None:
 
 def _find_picked_index(
     cloud: PointCloudData,
-    picked_point: np.ndarray,
+    picked_display: np.ndarray,
+    display_x: np.ndarray,
+    display_y: np.ndarray,
 ) -> int:
     """Find the index of the picked point in the point cloud.
 
-    The display coordinates are (lat, lon, z) matching the cloud's arrays.
-
     :param cloud: The point cloud being displayed.
-    :param picked_point: The 3D coordinates from the plotter (lat, lon, z).
+    :param picked_display: The 3D coordinates from the plotter (local_m_x, local_m_y, z).
+    :param display_x: The x display array (local meters, same length as cloud).
+    :param display_y: The y display array (local meters, same length as cloud).
     :return: Index into the cloud arrays.
     """
     dist = (
-        (cloud.lat - picked_point[0]) ** 2
-        + (cloud.lon - picked_point[1]) ** 2
-        + (cloud.z - picked_point[2]) ** 2
+        (display_x - picked_display[0]) ** 2
+        + (display_y - picked_display[1]) ** 2
+        + (cloud.z - picked_display[2]) ** 2
     )
     return int(np.argmin(dist))
