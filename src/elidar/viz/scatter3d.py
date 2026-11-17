@@ -714,23 +714,24 @@ class EmbeddedSearch:
                 }
                 dual = len(present_surface) >= 2
                 if cls == primary_cls:
-                    bar_args = {
+                    add_kwargs["scalar_bar_args"] = {
                         "title": f"Elevation ({unit})",
+                        "vertical": True,
                         "n_labels": 2,
                         "fmt": "%.0f",
                         "position_x": 0.75 if dual else 0.85,
                         "position_y": 0.05,
-                        "width": 0.08,
+                        "width": 0.05,
                         "height": 0.8,
                     }
-                    add_kwargs["scalar_bar_args"] = bar_args
                 elif cls in present_surface:
                     add_kwargs["scalar_bar_args"] = {
                         "title": "",
+                        "vertical": True,
                         "n_labels": 0,
-                        "position_x": 0.87,
+                        "position_x": 0.85,
                         "position_y": 0.05,
-                        "width": 0.08,
+                        "width": 0.05,
                         "height": 0.8,
                     }
                 else:
