@@ -380,7 +380,6 @@ class MainTab(QWidget):
         outer.setContentsMargins(2, 2, 2, 2)
 
         self.options_tabs = QTabWidget()
-        self.options_tabs.setMaximumHeight(200)
         outer.addWidget(self.options_tabs)
 
         # --- Basic tab ---
@@ -393,6 +392,7 @@ class MainTab(QWidget):
         form.addRow("Clean Data:", self.clean_check)
 
         self.ground_check = QCheckBox()
+        self.ground_check.setChecked(True)
         form.addRow("Ground Only:", self.ground_check)
 
         self.radius_spin = QDoubleSpinBox()
