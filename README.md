@@ -10,20 +10,28 @@ Python tool for analyzing LiDAR data to find precise peak and saddle elevations 
 - **Correct US survey foot handling** -- distinguishes US survey foot from international foot
 - **Keyboard-driven search** -- Z/D/Escape instead of dialog boxes
 
-## Installation
+## Quick Start (existing install)
 
 ```bash
-# Clone and install
+cd elidar_py
+source env/bin/activate
+elidar                    # Launch GUI
+```
+
+## Installation (first time)
+
+```bash
 cd elidar_py
 python -m venv env
-source env/bin/activate  # Linux/Mac
-pip install -e ".[gui]"  # Full install with GUI
+source env/bin/activate       # Linux/Mac
+# env\Scripts\activate        # Windows
+pip install -e ".[gui]"       # Full install with GUI
 ```
 
 For CLI-only (no GUI):
 ```bash
-pip install -e "."        # Core + CLI
-pip install -e ".[viz]"   # Core + CLI + interactive search mode
+pip install -e "."            # Core + CLI
+pip install -e ".[viz]"       # Core + CLI + interactive search mode
 ```
 
 ## Usage
