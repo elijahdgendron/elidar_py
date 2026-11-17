@@ -9,6 +9,10 @@ with a pyvista-based workflow:
   4. If Zoom: crop point cloud around picked point, re-render
   5. If Done: return the picked point
   6. If Cancel: return None
+
+When the point count exceeds DISPLAY_THRESHOLD, a random subsample is
+shown for fast interaction. The user zooms in until the full local
+point set is small enough to display directly.
 """
 
 from __future__ import annotations
@@ -26,14 +30,16 @@ from elidar.viz.colormaps import get_colormap
 
 logger = logging.getLogger(__name__)
 
+DISPLAY_THRESHOLD = 50_000
+
 
 @dataclass
 class PickResult:
     """Result from interactive point selection.
 
-    :param z: Elevation in the file's native unit.
-    :param x_local: X coordinate in the file's native CRS.
-    :param y_local: Y coordinate in the file's native CRS.
+    :param z: Elevation in meters.
+    :param x_local: X coordinate (lat after merge).
+    :param y_local: Y coordinate (lon after merge).
     :param lat: Latitude in degrees.
     :param lon: Longitude in degrees.
     :param index: Index into the point cloud arrays.
@@ -80,17 +86,23 @@ def interactive_search(
     """
     state = _PickState()
 
-    # Zoom radius in degrees (cloud coordinates are always lat/lon after merge)
     zoom_radius = options.query_radius_deg / 2
-
     working_cloud = cloud
 
     while True:
         state.reset_for_iteration()
 
-        display_x, display_y = _show_plotter(working_cloud, crs_info, options, state)
+        is_subsampled = working_cloud.n_points > DISPLAY_THRESHOLD
+        if is_subsampled:
+            display_cloud = _subsample(working_cloud, DISPLAY_THRESHOLD)
+        else:
+            display_cloud = working_cloud
 
-        if state.action == _UserAction.CANCEL or state.action == _UserAction.NONE:
+        display_x, display_y = _show_plotter(
+            display_cloud, crs_info, options, state, is_subsampled,
+        )
+
+        if state.action in (_UserAction.CANCEL, _UserAction.NONE):
             logger.info("Search cancelled")
             return None
 
@@ -99,29 +111,33 @@ def interactive_search(
             return None
 
         pick_idx = _find_picked_index(
-            working_cloud, state.picked_point, display_x, display_y
+            display_cloud, state.picked_point, display_x, display_y,
         )
 
-        if state.action == _UserAction.DONE:
+        if state.action == _UserAction.DONE and not is_subsampled:
             logger.info(
                 "Point selected: z=%.4f at lat=%.6f, lon=%.6f",
-                working_cloud.z[pick_idx],
-                working_cloud.lat[pick_idx],
-                working_cloud.lon[pick_idx],
+                display_cloud.z[pick_idx],
+                display_cloud.lat[pick_idx],
+                display_cloud.lon[pick_idx],
             )
             return PickResult(
-                z=float(working_cloud.z[pick_idx]),
-                x_local=float(working_cloud.x[pick_idx]),
-                y_local=float(working_cloud.y[pick_idx]),
-                lat=float(working_cloud.lat[pick_idx]),
-                lon=float(working_cloud.lon[pick_idx]),
+                z=float(display_cloud.z[pick_idx]),
+                x_local=float(display_cloud.x[pick_idx]),
+                y_local=float(display_cloud.y[pick_idx]),
+                lat=float(display_cloud.lat[pick_idx]),
+                lon=float(display_cloud.lon[pick_idx]),
                 index=pick_idx,
             )
 
-        # ZOOM: crop around picked point in lat/lon space
+        if state.action == _UserAction.DONE and is_subsampled:
+            # User pressed Done but we're still subsampled -- treat as zoom
+            state.action = _UserAction.ZOOM
+
+        # ZOOM: crop the FULL working cloud around picked point in lat/lon space
         zoom_radius *= options.zoom_scale
-        clat = working_cloud.lat[pick_idx]
-        clon = working_cloud.lon[pick_idx]
+        clat = display_cloud.lat[pick_idx]
+        clon = display_cloud.lon[pick_idx]
         dist = np.sqrt(
             (working_cloud.lat - clat) ** 2 + (working_cloud.lon - clon) ** 2
         )
@@ -139,21 +155,38 @@ def interactive_search(
         )
 
 
+def _subsample(cloud: PointCloudData, n: int) -> PointCloudData:
+    """Randomly subsample a point cloud to at most n points.
+
+    :param cloud: Input point cloud.
+    :param n: Maximum number of points to keep.
+    :return: Subsampled point cloud.
+    """
+    if cloud.n_points <= n:
+        return cloud
+    rng = np.random.default_rng(42)
+    indices = rng.choice(cloud.n_points, size=n, replace=False)
+    mask = np.zeros(cloud.n_points, dtype=bool)
+    mask[indices] = True
+    return cloud.subset(mask)
+
+
 def _show_plotter(
     cloud: PointCloudData,
     crs_info: CrsInfo,
     options: QueryOptions,
     state: _PickState,
+    is_subsampled: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Create and show the pyvista plotter, blocking until the user acts.
 
-    :param cloud: Point cloud to display.
+    :param cloud: Point cloud to display (may be a subsample).
     :param crs_info: CRS info for axis labels.
     :param options: Display options.
     :param state: Mutable state for pick tracking.
+    :param is_subsampled: Whether the displayed cloud is a subsample.
+    :return: (display_x, display_y) arrays in local meters.
     """
-    # Convert lat/lon to local meters so horizontal and vertical scales
-    # are comparable and the plot shows actual terrain shape.
     center_lat = float(np.mean(cloud.lat))
     center_lon = float(np.mean(cloud.lon))
     m_per_deg_lat = 111_320.0
@@ -185,14 +218,12 @@ def _show_plotter(
         zlabel="Altitude (m)",
     )
 
-    # Set camera looking down at an angle with Z pointing up
     plotter.camera_position = "xz"
     plotter.camera.elevation = 25
     plotter.camera.azimuth = -60
 
-    _add_instructions(plotter, cloud.n_points)
+    _add_instructions(plotter, cloud.n_points, is_subsampled)
 
-    # Point picking callback -- convert display coords back to lat/lon for status
     def on_pick(point: np.ndarray) -> None:
         state.picked_point = point
         real_lat = point[0] / m_per_deg_lat + center_lat
@@ -211,7 +242,6 @@ def _show_plotter(
         tolerance=0.025,
     )
 
-    # Key event callbacks
     def on_zoom() -> None:
         if state.picked_point is not None:
             state.action = _UserAction.ZOOM
@@ -223,6 +253,8 @@ def _show_plotter(
         if state.picked_point is not None:
             state.action = _UserAction.DONE
             plotter.close()
+        elif is_subsampled:
+            _flash_message(plotter, "Zoom in further before selecting (Z)")
         else:
             _flash_message(plotter, "Pick a point first, then press D")
 
@@ -240,11 +272,28 @@ def _show_plotter(
     return plot_x, plot_y
 
 
-def _add_instructions(plotter: pv.Plotter, n_points: int) -> None:
+def _add_instructions(plotter: pv.Plotter, n_points: int, is_subsampled: bool) -> None:
     """Add instruction text overlay to the plotter."""
+    if is_subsampled:
+        mode_text = "CLICK TO DOWNSELECT"
+        mode_color = "red"
+        hint = f"Showing {n_points:,} of many -- zoom in to see all points"
+    else:
+        mode_text = "CLICK TO SELECT"
+        mode_color = "green"
+        hint = f"{n_points:,} points (full resolution)"
+
+    plotter.add_text(
+        mode_text,
+        position="upper_right",
+        font_size=14,
+        color=mode_color,
+        shadow=True,
+        name="mode",
+    )
+
     instructions = (
-        f"Points: {n_points:,}\n"
-        "Click a point to select it\n"
+        f"{hint}\n"
         "Z = Zoom around selection\n"
         "D / Enter = Done (accept selection)\n"
         "Escape = Cancel"
