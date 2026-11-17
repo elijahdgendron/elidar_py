@@ -709,7 +709,7 @@ class MainTab(QWidget):
 
     def _log(self, msg: str) -> None:
         """Append a message to the info terminal."""
-        self._log(msg)
+        self.results_text.append(msg)
 
     def _clear_result_fields(self) -> None:
         self.result_class_edit.clear()
