@@ -30,8 +30,8 @@ from PyQt6.QtWidgets import (
 )
 from pyvistaqt import QtInteractor
 
-from elidar.core.types import ColorScale, M2FT, QueryOptions, QueryType
-from elidar.viz.scatter3d import EmbeddedSearch
+from elidar.core.types import ColorScale, M2FT, QueryOptions, QueryResult, QueryType
+from elidar.viz.scatter3d import EmbeddedSearch, PickResult
 
 logger = logging.getLogger(__name__)
 
@@ -580,7 +580,14 @@ class MainTab(QWidget):
     def _on_search_status(self, msg: str) -> None:
         self.results_text.append(msg + "\n")
 
-    def _on_search_result(self, result: object) -> None:
+    def _on_search_result(self, pick: PickResult) -> None:
+        result = QueryResult(
+            elevation_m=pick.z,
+            elevation_ft=pick.z * M2FT,
+            location_local=(pick.x_local, pick.y_local),
+            location_deg=(pick.lat, pick.lon),
+            query_type=QueryType.SEARCH,
+        )
         self._display_result(result)
 
     # --- Results ---
