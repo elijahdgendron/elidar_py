@@ -724,6 +724,7 @@ class EmbeddedSearch:
                         "vertical": True,
                         "n_labels": 2,
                         "fmt": "%.0f",
+                        "label_font_size": 14,
                         "position_x": 0.75 if dual else 0.85,
                         "position_y": 0.05,
                         "width": 0.05,
@@ -731,7 +732,7 @@ class EmbeddedSearch:
                     }
                 elif cls in present_surface:
                     add_kwargs["scalar_bar_args"] = {
-                        "title": "",
+                        "title": " ",
                         "vertical": True,
                         "n_labels": 0,
                         "position_x": 0.85,
