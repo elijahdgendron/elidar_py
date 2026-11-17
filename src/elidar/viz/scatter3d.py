@@ -481,6 +481,14 @@ class EmbeddedSearch:
             self.cancel()
             return
 
+        # Recompute zoom radius from actual data extent so the next zoom
+        # is always relative to what's on screen, not an accumulated product
+        # that may extend beyond the data boundary.
+        wc = self._working_cloud
+        lat_span = float(wc.lat.max() - wc.lat.min())
+        lon_span = float(wc.lon.max() - wc.lon.min())
+        self._zoom_radius = max(lat_span, lon_span) / 2
+
         logger.info(
             "Zoomed: radius=%.6f deg, %d points remaining",
             self._zoom_radius,
