@@ -426,9 +426,9 @@ class MainTab(QWidget):
         form.addRow("Point Size:", self.point_size_spin)
 
         self.bg_combo = QComboBox()
-        self.bg_combo.addItem("Black", "black")
-        self.bg_combo.addItem("Gray", "gray")
         self.bg_combo.addItem("White", "white")
+        self.bg_combo.addItem("Gray", "gray")
+        self.bg_combo.addItem("Black", "black")
         self.bg_combo.currentIndexChanged.connect(self._on_bg_changed)
         form.addRow("Background:", self.bg_combo)
 
