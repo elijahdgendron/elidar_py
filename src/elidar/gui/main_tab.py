@@ -211,6 +211,10 @@ class MainTab(QWidget):
         self.cancel_btn.setEnabled(False)
         btn_bar.addWidget(self.cancel_btn)
 
+        self.screenshot_btn = QPushButton("Screenshot")
+        self.screenshot_btn.clicked.connect(self._on_screenshot)
+        btn_bar.addWidget(self.screenshot_btn)
+
         # Mode label
         self.mode_label = QLabel("")
         self.mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -644,6 +648,17 @@ class MainTab(QWidget):
         self.analyze_btn.setText("Analyze")
         self._log(f"ERROR: {msg}\n")
         logger.error("Query failed: %s", msg)
+
+    def _on_screenshot(self) -> None:
+        """Save the current 3D view as a PNG."""
+        last_dir = self.settings.value("last_dir", os.path.expanduser("~"))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Screenshot", str(Path(last_dir) / "elidar_screenshot.png"),
+            "PNG Images (*.png);;All Files (*)",
+        )
+        if path:
+            self.plotter.screenshot(path)
+            self._log(f"Screenshot saved: {path}")
 
     # --- Search controls ---
 
