@@ -731,8 +731,9 @@ class EmbeddedSearch:
                 dual = len(present_surface) >= 2
                 fc = self._font_color
                 if cls == primary_cls:
+                    title = f"   Elev ({unit})" if dual else f"Elev ({unit})"
                     add_kwargs["scalar_bar_args"] = {
-                        "title": f"Elev ({unit})",
+                        "title": title,
                         "title_font_size": 10,
                         "vertical": True,
                         "n_labels": 0 if dual else 2,
