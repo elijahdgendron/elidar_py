@@ -425,6 +425,13 @@ class MainTab(QWidget):
         self.point_size_spin.valueChanged.connect(self._on_point_size_changed)
         form.addRow("Point Size:", self.point_size_spin)
 
+        self.bg_combo = QComboBox()
+        self.bg_combo.addItem("Black", "black")
+        self.bg_combo.addItem("Gray", "gray")
+        self.bg_combo.addItem("White", "white")
+        self.bg_combo.currentIndexChanged.connect(self._on_bg_changed)
+        form.addRow("Background:", self.bg_combo)
+
         self.unit_combo = QComboBox()
         self.unit_combo.addItem("Auto", None)
         self.unit_combo.addItem("Feet", "ft")
@@ -503,6 +510,9 @@ class MainTab(QWidget):
     def _on_point_size_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
             self.embedded_search.set_point_size(value)
+
+    def _on_bg_changed(self) -> None:
+        self.plotter.set_background(self.bg_combo.currentData())
 
     def _build_action_group(self) -> QWidget:
         widget = QWidget()
