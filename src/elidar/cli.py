@@ -27,6 +27,8 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers = parser.add_subparsers(dest="command", help="Query type")
 
+    subparsers.add_parser("gui", help="Launch the desktop GUI")
+
     _add_query_parser(subparsers, "peak", "Find the highest point near a location")
     _add_query_parser(subparsers, "point", "Find the closest LiDAR return to a location")
     _add_query_parser(subparsers, "search", "Interactive 3D point selection")
@@ -45,9 +47,9 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s: %(message)s",
     )
 
-    if args.command is None:
-        parser.print_help()
-        return 1
+    if args.command is None or args.command == "gui":
+        from elidar.gui.app import run_gui
+        return run_gui()
 
     if args.command == "prominence":
         return _run_prominence(args)
