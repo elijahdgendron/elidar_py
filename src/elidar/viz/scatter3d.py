@@ -523,6 +523,7 @@ class EmbeddedSearch:
 
         cmap = get_colormap(self._options.colorscale)
 
+        self.plotter.disable_picking()
         self.plotter.clear()
         self.plotter.add_points(
             polydata,
