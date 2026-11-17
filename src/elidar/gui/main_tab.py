@@ -392,7 +392,6 @@ class MainTab(QWidget):
         form.addRow("Clean Data:", self.clean_check)
 
         self.ground_check = QCheckBox()
-        self.ground_check.setChecked(True)
         form.addRow("Ground Only:", self.ground_check)
 
         self.radius_spin = QDoubleSpinBox()
