@@ -443,12 +443,14 @@ class EmbeddedSearch:
         self._working_cloud = cloud
         self._options = options
         self._crs_info = crs_info
-        # Use the actual data extent if smaller than the configured radius,
-        # so the first zoom immediately tightens the view.
-        lat_span = float(cloud.lat.max() - cloud.lat.min())
-        lon_span = float(cloud.lon.max() - cloud.lon.min())
-        data_radius = max(lat_span, lon_span) / 2
-        self._zoom_radius = min(options.query_radius_deg / 2, data_radius)
+        # Zoom radius in meters for circular (not elliptical) cropping.
+        center_lat = float(np.mean(cloud.lat))
+        m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(center_lat))
+        lat_span_m = float(cloud.lat.max() - cloud.lat.min()) * _M_PER_DEG_LAT
+        lon_span_m = float(cloud.lon.max() - cloud.lon.min()) * m_per_deg_lon
+        data_radius_m = max(lat_span_m, lon_span_m) / 2
+        config_radius_m = options.query_radius_deg / 2 * _M_PER_DEG_LAT
+        self._zoom_radius_m = min(config_radius_m, data_radius_m)
         self._picked_point = None
         self._pick_idx = None
         self._active = True
@@ -466,14 +468,15 @@ class EmbeddedSearch:
         idx = self._pick_idx
         cloud = self._display_cloud
 
-        self._zoom_radius *= self._options.zoom_scale
+        self._zoom_radius_m *= self._options.zoom_scale
         clat = cloud.lat[idx]
         clon = cloud.lon[idx]
-        dist = np.sqrt(
-            (self._working_cloud.lat - clat) ** 2
-            + (self._working_cloud.lon - clon) ** 2
-        )
-        mask = dist <= self._zoom_radius
+        # Distance in meters so the crop is a true circle on the ground
+        m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(clat))
+        dlat_m = (self._working_cloud.lat - clat) * _M_PER_DEG_LAT
+        dlon_m = (self._working_cloud.lon - clon) * m_per_deg_lon
+        dist_m = np.sqrt(dlat_m ** 2 + dlon_m ** 2)
+        mask = dist_m <= self._zoom_radius_m
         self._working_cloud = self._working_cloud.subset(mask)
 
         if self._working_cloud.n_points == 0:
@@ -481,13 +484,13 @@ class EmbeddedSearch:
             self.cancel()
             return
 
-        # Recompute zoom radius from actual data extent so the next zoom
-        # is always relative to what's on screen, not an accumulated product
-        # that may extend beyond the data boundary.
+        # Recompute zoom radius from actual data extent in meters
         wc = self._working_cloud
-        lat_span = float(wc.lat.max() - wc.lat.min())
-        lon_span = float(wc.lon.max() - wc.lon.min())
-        self._zoom_radius = max(lat_span, lon_span) / 2
+        c_lat = float(np.mean(wc.lat))
+        mlon = _M_PER_DEG_LAT * np.cos(np.radians(c_lat))
+        lat_span_m = float(wc.lat.max() - wc.lat.min()) * _M_PER_DEG_LAT
+        lon_span_m = float(wc.lon.max() - wc.lon.min()) * mlon
+        self._zoom_radius_m = max(lat_span_m, lon_span_m) / 2
 
         logger.info(
             "Zoomed: radius=%.6f deg, %d points remaining",
