@@ -739,9 +739,9 @@ class EmbeddedSearch:
                         "fmt": "%.0f",
                         "label_font_size": 10,
                         "color": fc,
-                        "position_x": 0.80 if dual else 0.88,
+                        "position_x": 0.89 if dual else 0.93,
                         "position_y": 0.05,
-                        "width": 0.04,
+                        "width": 0.03,
                         "height": 0.8,
                     }
                 elif cls in present_surface:
@@ -753,9 +753,9 @@ class EmbeddedSearch:
                         "fmt": "%.0f",
                         "label_font_size": 10,
                         "color": fc,
-                        "position_x": 0.88,
+                        "position_x": 0.93,
                         "position_y": 0.05,
-                        "width": 0.04,
+                        "width": 0.03,
                         "height": 0.8,
                     }
                 else:
