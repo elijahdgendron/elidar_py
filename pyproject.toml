@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "elidar"
+version = "0.1.0"
+description = "LiDAR analysis tool for peak and saddle prominence measurement"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Elijah Gendron"}]
+
+dependencies = [
+    "laspy[lazrs]>=2.5",
+    "pyproj>=3.6",
+    "numpy>=1.24",
+    "rasterio>=1.3",
+    "open3d>=0.18",
+]
+
+[project.optional-dependencies]
+viz = [
+    "pyvista>=0.43",
+    "pyvistaqt>=0.11",
+]
+gui = [
+    "pyvista>=0.43",
+    "pyvistaqt>=0.11",
+    "PyQt6>=6.5",
+]
+dev = [
+    "pytest>=7",
+    "ruff",
+]
+
+[project.scripts]
+elidar = "elidar.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
