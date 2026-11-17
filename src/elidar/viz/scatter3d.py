@@ -316,9 +316,10 @@ def _add_instructions(plotter: pv.Plotter, n_points: int, is_subsampled: bool) -
     )
 
 
-def _update_status(plotter: pv.Plotter, lat: float, lon: float, elev_str: str) -> None:
+def _update_status(plotter: pv.Plotter, lat: float, lon: float, elev_str: str, cls_name: str = "") -> None:
     """Update the status text after a point is picked."""
-    status = f"Selected: {lat:.6f}°N, {lon:.6f}°W  Elev: {elev_str}"
+    cls_part = f"[{cls_name}]  " if cls_name else ""
+    status = f"{cls_part}{lat:.6f}°N, {lon:.6f}°W  {elev_str}"
     plotter.add_text(
         status,
         position="lower_left",
@@ -346,6 +347,7 @@ def _find_picked_index(
     picked_display: np.ndarray,
     display_x: np.ndarray,
     display_y: np.ndarray,
+    visible_mask: np.ndarray | None = None,
 ) -> int:
     """Find the index of the picked point in the point cloud.
 
@@ -353,6 +355,8 @@ def _find_picked_index(
     :param picked_display: The 3D coordinates from the plotter (local_m_x, local_m_y, z).
     :param display_x: The x display array (local meters, same length as cloud).
     :param display_y: The y display array (local meters, same length as cloud).
+    :param visible_mask: Boolean mask of visible points. If provided, only
+        visible points are considered for matching.
     :return: Index into the cloud arrays.
     """
     dist = (
@@ -360,6 +364,8 @@ def _find_picked_index(
         + (display_y - picked_display[1]) ** 2
         + (cloud.z - picked_display[2]) ** 2
     )
+    if visible_mask is not None:
+        dist = np.where(visible_mask, dist, np.inf)
     return int(np.argmin(dist))
 
 
@@ -859,8 +865,16 @@ class EmbeddedSearch:
     def _on_pick(self, point: np.ndarray) -> None:
         """Callback when the user clicks a point in the embedded view."""
         self._picked_point = point
+
+        # Only match against visible classes
+        visible_mask = None
+        cloud = self._display_cloud
+        if self._visible_classes is not None and cloud.classification is not None:
+            visible_mask = np.isin(cloud.classification, list(self._visible_classes))
+
         self._pick_idx = _find_picked_index(
-            self._display_cloud, point, self._display_x, self._display_y,
+            cloud, point, self._display_x, self._display_y,
+            visible_mask=visible_mask,
         )
 
         s = self._unit_scale
@@ -868,10 +882,18 @@ class EmbeddedSearch:
         real_lon = point[1] / (self._m_per_deg_lon * s) + self._center_lon
         z_m = point[2] / s
 
-        elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
-        _update_status(self.plotter, real_lat, real_lon, elev_str)
+        # Classification name
+        from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
+        cls_name = ""
+        if cloud.classification is not None:
+            cls_code = int(cloud.classification[self._pick_idx])
+            cls_name = ASPRS_CLASSIFICATION_NAMES.get(cls_code, f"Class {cls_code}")
 
-        status = f"Selected: {real_lat:.6f}°N, {real_lon:.6f}°W  Elev: {elev_str}"
+        elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
+        status_plotter = f"{cls_name}  {real_lat:.6f}°N, {real_lon:.6f}°W  {elev_str}"
+        _update_status(self.plotter, real_lat, real_lon, elev_str, cls_name)
+
+        status = f"Selected: {cls_name}  {real_lat:.6f}°N, {real_lon:.6f}°W  Elev: {elev_str}"
         self._emit_status(status)
 
     def _emit_status(self, msg: str) -> None:
