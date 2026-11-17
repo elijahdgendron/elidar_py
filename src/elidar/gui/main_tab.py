@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QMessageBox,
     QPushButton,
@@ -134,6 +133,7 @@ class MainTab(QWidget):
         self.settings = settings
         self._worker: QThread | None = None
         self._last_result = None
+        self._tools_tab = None
 
         layout = QHBoxLayout(self)
 
@@ -203,18 +203,11 @@ class MainTab(QWidget):
         self.mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mode_label.setStyleSheet("font-weight: bold; font-size: 13px;")
 
-        # Bottom: results + prominence side by side
-        bottom = QWidget()
-        bottom_layout = QHBoxLayout(bottom)
-        bottom_layout.setContentsMargins(0, 0, 0, 0)
-
+        # Bottom: results log
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
         self.results_text.setMaximumHeight(150)
         self.results_text.setStyleSheet("font-family: monospace; font-size: 11px;")
-        bottom_layout.addWidget(self.results_text, stretch=3)
-
-        bottom_layout.addWidget(self._build_prominence_group(), stretch=2)
 
         # Exaggeration slider (vertical, right of viewer)
         exag_col = QVBoxLayout()
@@ -246,7 +239,7 @@ class MainTab(QWidget):
         right_layout.addWidget(self.mode_label)
         right_layout.addLayout(viewer_row, stretch=1)
         right_layout.addLayout(btn_bar)
-        right_layout.addWidget(bottom)
+        right_layout.addWidget(self.results_text)
 
         # Main splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -260,6 +253,10 @@ class MainTab(QWidget):
         self.plotter.add_key_event("d", self._on_done)
         self.plotter.add_key_event("Return", self._on_done)
         self.plotter.add_key_event("Escape", self._on_cancel)
+
+    def set_tools_tab(self, tools_tab: object) -> None:
+        """Set the tools tab reference for forwarding results."""
+        self._tools_tab = tools_tab
 
     def _build_file_group(self) -> QGroupBox:
         group = QGroupBox("Data Files")
@@ -384,38 +381,6 @@ class MainTab(QWidget):
         layout.addWidget(self.analyze_btn)
 
         return widget
-
-    def _build_prominence_group(self) -> QGroupBox:
-        group = QGroupBox("Prominence")
-        form = QFormLayout(group)
-
-        self.peak_elev_edit = QLineEdit()
-        self.peak_elev_edit.setPlaceholderText("ft")
-        form.addRow("Peak (ft):", self.peak_elev_edit)
-
-        self.saddle_elev_edit = QLineEdit()
-        self.saddle_elev_edit.setPlaceholderText("ft")
-        form.addRow("Saddle (ft):", self.saddle_elev_edit)
-
-        btn_row = QHBoxLayout()
-        self.calc_prom_btn = QPushButton("Calculate")
-        self.calc_prom_btn.clicked.connect(self._on_calc_prominence)
-        btn_row.addWidget(self.calc_prom_btn)
-
-        copy_peak_btn = QPushButton("Copy → Peak")
-        copy_peak_btn.clicked.connect(lambda: self._copy_to_prominence("peak"))
-        btn_row.addWidget(copy_peak_btn)
-
-        copy_saddle_btn = QPushButton("Copy → Saddle")
-        copy_saddle_btn.clicked.connect(lambda: self._copy_to_prominence("saddle"))
-        btn_row.addWidget(copy_saddle_btn)
-        form.addRow(btn_row)
-
-        self.prom_label = QLabel("")
-        self.prom_label.setStyleSheet("font-weight: bold; font-size: 13px;")
-        form.addRow("Result:", self.prom_label)
-
-        return group
 
     # --- File slots ---
 
@@ -603,26 +568,6 @@ class MainTab(QWidget):
             f"  Elevation: {result.elevation_ft:,.2f} ft  ({result.elevation_m:,.2f} m)\n"
             f"  Location:  {result.location_deg[0]:.6f}°N, {result.location_deg[1]:.6f}°W\n"
         )
+        if self._tools_tab is not None:
+            self._tools_tab.set_last_result_ft(result.elevation_ft)
 
-    # --- Prominence ---
-
-    def _on_calc_prominence(self) -> None:
-        try:
-            peak = float(self.peak_elev_edit.text())
-            saddle = float(self.saddle_elev_edit.text())
-        except ValueError:
-            self.prom_label.setText("Enter valid numbers")
-            return
-
-        prom_ft = peak - saddle
-        prom_m = prom_ft / M2FT
-        self.prom_label.setText(f"{prom_ft:,.2f} ft  ({prom_m:,.2f} m)")
-
-    def _copy_to_prominence(self, target: str) -> None:
-        if self._last_result is None:
-            return
-        val = f"{self._last_result.elevation_ft:.2f}"
-        if target == "peak":
-            self.peak_elev_edit.setText(val)
-        else:
-            self.saddle_elev_edit.setText(val)

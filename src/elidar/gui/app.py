@@ -41,6 +41,7 @@ class ELiDARApp(QMainWindow):
 
         self.main_tab = MainTab(self.settings)
         self.tools_tab = ToolsTab()
+        self.main_tab.set_tools_tab(self.tools_tab)
 
         self.tabs.addTab(self.main_tab, "Analysis")
         self.tabs.addTab(self.tools_tab, "Tools")
