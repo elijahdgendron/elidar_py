@@ -406,6 +406,7 @@ class EmbeddedSearch:
         self._unit_scale: float = 1.0
         self._z_exaggeration: float = 1.0
         self._point_size: int = 5
+        self._font_color: str = "black"
         self._base_plot_z: np.ndarray | None = None
         self._polydatas: list[pv.PolyData] = []
         self._class_cmaps: dict[int, ColorScale] = {}
@@ -584,6 +585,16 @@ class EmbeddedSearch:
             actor.GetProperty().SetPointSize(size)
         self.plotter.render()
 
+    def set_background(self, color: str) -> None:
+        """Change the background color and adapt text colors.
+
+        :param color: Background color name ("black", "gray", "white").
+        """
+        self._font_color = "white" if color == "black" else "black"
+        self.plotter.set_background(color)
+        if self._active and self._working_cloud is not None:
+            self._render()
+
     def set_class_cmaps(self, class_cmaps: dict[int, ColorScale]) -> None:
         """Update colormaps and re-render.
 
@@ -718,6 +729,7 @@ class EmbeddedSearch:
                     "render_points_as_spheres": True,
                 }
                 dual = len(present_surface) >= 2
+                fc = self._font_color
                 if cls == primary_cls:
                     add_kwargs["scalar_bar_args"] = {
                         "title": f"Elev ({unit})",
@@ -726,6 +738,7 @@ class EmbeddedSearch:
                         "n_labels": 0 if dual else 2,
                         "fmt": "%.0f",
                         "label_font_size": 10,
+                        "color": fc,
                         "position_x": 0.80 if dual else 0.88,
                         "position_y": 0.05,
                         "width": 0.04,
@@ -739,6 +752,7 @@ class EmbeddedSearch:
                         "n_labels": 2,
                         "fmt": "%.0f",
                         "label_font_size": 10,
+                        "color": fc,
                         "position_x": 0.88,
                         "position_y": 0.05,
                         "width": 0.04,
@@ -792,6 +806,7 @@ class EmbeddedSearch:
             ylabel="E",
             zlabel="Up",
             line_width=2,
+            color=self._font_color,
         )
 
         self.plotter.enable_point_picking(

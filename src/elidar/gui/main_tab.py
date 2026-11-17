@@ -512,7 +512,11 @@ class MainTab(QWidget):
             self.embedded_search.set_point_size(value)
 
     def _on_bg_changed(self) -> None:
-        self.plotter.set_background(self.bg_combo.currentData())
+        color = self.bg_combo.currentData()
+        if self.embedded_search.is_active:
+            self.embedded_search.set_background(color)
+        else:
+            self.plotter.set_background(color)
 
     def _build_action_group(self) -> QWidget:
         widget = QWidget()
