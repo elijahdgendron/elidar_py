@@ -58,12 +58,19 @@ class _LoadWorker(QThread):
         try:
             from elidar.core.query import _load_and_merge, _normalize_paths, _spatial_filter
             from elidar.core import cleaning
+            import numpy as np
 
             paths = _normalize_paths(
                 self.las_paths if len(self.las_paths) > 1 else self.las_paths[0]
             )
             cloud, crs_info = _load_and_merge(paths, self.options)
-            cloud = _spatial_filter(cloud, self.lat, self.lon, self.options.query_radius_deg)
+
+            lat, lon = self.lat, self.lon
+            if self.options.center:
+                lat = float(np.mean(cloud.lat))
+                lon = float(np.mean(cloud.lon))
+
+            cloud = _spatial_filter(cloud, lat, lon, self.options.query_radius_deg)
 
             if cloud.n_points == 0:
                 self.error.emit("Query point is not within the LAS data extent")
@@ -266,6 +273,10 @@ class MainTab(QWidget):
         group = QGroupBox("Query Location")
         form = QFormLayout(group)
 
+        self.guess_center_check = QCheckBox("Use tile center")
+        self.guess_center_check.toggled.connect(self._on_guess_center_toggled)
+        form.addRow(self.guess_center_check)
+
         self.lat_spin = QDoubleSpinBox()
         self.lat_spin.setRange(-90.0, 90.0)
         self.lat_spin.setDecimals(6)
@@ -285,6 +296,10 @@ class MainTab(QWidget):
         form.addRow("Query Type:", self.query_type_combo)
 
         return group
+
+    def _on_guess_center_toggled(self, checked: bool) -> None:
+        self.lat_spin.setEnabled(not checked)
+        self.lon_spin.setEnabled(not checked)
 
     def _build_options_group(self) -> QGroupBox:
         group = QGroupBox("Options")
@@ -322,6 +337,11 @@ class MainTab(QWidget):
         self.unit_combo.addItem("Feet", "ft")
         self.unit_combo.addItem("Meters", "m")
         form.addRow("Force Unit:", self.unit_combo)
+
+        self.display_unit_combo = QComboBox()
+        self.display_unit_combo.addItem("Meters", False)
+        self.display_unit_combo.addItem("Feet", True)
+        form.addRow("Display In:", self.display_unit_combo)
 
         return group
 
@@ -425,6 +445,7 @@ class MainTab(QWidget):
             zoom_scale=self.zoom_spin.value(),
             force_unit=self.unit_combo.currentData(),
             dem_path=self.dem_edit.text().strip() or None,
+            center=self.guess_center_check.isChecked(),
         )
 
     def _on_analyze(self) -> None:
@@ -437,8 +458,9 @@ class MainTab(QWidget):
         lon = self.lon_spin.value()
         query_type = self.query_type_combo.currentData()
 
-        self.settings.setValue("last_lat", lat)
-        self.settings.setValue("last_lon", lon)
+        if not self.guess_center_check.isChecked():
+            self.settings.setValue("last_lat", lat)
+            self.settings.setValue("last_lon", lon)
 
         options = self._get_options()
 
@@ -463,8 +485,9 @@ class MainTab(QWidget):
         self.analyze_btn.setText("Analyze")
 
         options = self._get_options()
+        display_feet = self.display_unit_combo.currentData()
         self.viewer_stack.setCurrentIndex(1)
-        self.embedded_search.load(cloud, crs_info, options)
+        self.embedded_search.load(cloud, crs_info, options, display_feet=display_feet)
 
         self._set_search_controls(True)
         self._update_mode_label()

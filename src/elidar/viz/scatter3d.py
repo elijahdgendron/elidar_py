@@ -210,13 +210,18 @@ def _show_plotter(
         cmap=cmap,
         point_size=5,
         render_points_as_spheres=True,
-        scalar_bar_args={"n_labels": 2, "fmt": "%.0f"},
+        scalar_bar_args={
+            "title": "Elevation (m)",
+            "n_labels": 2,
+            "fmt": "%.0f",
+        },
     )
 
     plotter.add_axes(
-        xlabel="South-North (m)",
-        ylabel="West-East (m)",
-        zlabel="Altitude (m)",
+        xlabel="N",
+        ylabel="E",
+        zlabel="Up",
+        line_width=2,
     )
 
     plotter.camera_position = "xz"
@@ -230,7 +235,8 @@ def _show_plotter(
         real_lat = point[0] / m_per_deg_lat + center_lat
         real_lon = point[1] / m_per_deg_lon + center_lon
         z_m = point[2]
-        _update_status(plotter, real_lat, real_lon, z_m)
+        elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
+        _update_status(plotter, real_lat, real_lon, elev_str)
 
     plotter.enable_point_picking(
         callback=on_pick,
@@ -309,9 +315,8 @@ def _add_instructions(plotter: pv.Plotter, n_points: int, is_subsampled: bool) -
     )
 
 
-def _update_status(plotter: pv.Plotter, lat: float, lon: float, z_m: float) -> None:
+def _update_status(plotter: pv.Plotter, lat: float, lon: float, elev_str: str) -> None:
     """Update the status text after a point is picked."""
-    elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
     status = f"Selected: {lat:.6f}°N, {lon:.6f}°W  Elev: {elev_str}"
     plotter.add_text(
         status,
@@ -396,6 +401,8 @@ class EmbeddedSearch:
         self._center_lon: float = 0.0
         self._m_per_deg_lon: float = 0.0
         self._active: bool = False
+        self._display_feet: bool = False
+        self._unit_scale: float = 1.0
 
     @property
     def is_active(self) -> bool:
@@ -410,12 +417,14 @@ class EmbeddedSearch:
         cloud: PointCloudData,
         crs_info: CrsInfo,
         options: QueryOptions,
+        display_feet: bool = False,
     ) -> None:
         """Load a point cloud and render it.
 
         :param cloud: Cleaned point cloud with lat/lon populated.
         :param crs_info: CRS info for display.
         :param options: Query options.
+        :param display_feet: If True, display in feet instead of meters.
         """
         self._working_cloud = cloud
         self._options = options
@@ -424,6 +433,8 @@ class EmbeddedSearch:
         self._picked_point = None
         self._pick_idx = None
         self._active = True
+        self._display_feet = display_feet
+        self._unit_scale = M2FT if display_feet else 1.0
         self._render()
 
     def zoom(self) -> None:
@@ -509,14 +520,16 @@ class EmbeddedSearch:
             self._display_cloud = self._working_cloud
 
         cloud = self._display_cloud
+        s = self._unit_scale
+        unit = "ft" if self._display_feet else "m"
 
         self._center_lat = float(np.mean(cloud.lat))
         self._center_lon = float(np.mean(cloud.lon))
         self._m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(self._center_lat))
 
-        self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT
-        self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon
-        plot_z = cloud.z.astype(np.float64)
+        self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
+        self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
+        plot_z = cloud.z.astype(np.float64) * s
 
         points = np.column_stack([self._display_x, self._display_y, plot_z])
         polydata = pv.PolyData(points)
@@ -532,7 +545,18 @@ class EmbeddedSearch:
             cmap=cmap,
             point_size=5,
             render_points_as_spheres=True,
-            scalar_bar_args={"n_labels": 2, "fmt": "%.0f"},
+            scalar_bar_args={
+                "title": f"Elevation ({unit})",
+                "n_labels": 2,
+                "fmt": "%.0f",
+            },
+        )
+
+        self.plotter.add_axes(
+            xlabel="N",
+            ylabel="E",
+            zlabel="Up",
+            line_width=2,
         )
 
         self.plotter.enable_point_picking(
@@ -559,16 +583,15 @@ class EmbeddedSearch:
             self._display_cloud, point, self._display_x, self._display_y,
         )
 
-        real_lat = point[0] / _M_PER_DEG_LAT + self._center_lat
-        real_lon = point[1] / self._m_per_deg_lon + self._center_lon
-        z_m = point[2]
+        s = self._unit_scale
+        real_lat = point[0] / (_M_PER_DEG_LAT * s) + self._center_lat
+        real_lon = point[1] / (self._m_per_deg_lon * s) + self._center_lon
+        z_m = point[2] / s
 
-        _update_status(self.plotter, real_lat, real_lon, z_m)
+        elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
+        _update_status(self.plotter, real_lat, real_lon, elev_str)
 
-        status = (
-            f"Selected: {real_lat:.6f}°N, {real_lon:.6f}°W  "
-            f"Elev: {z_m:.2f} m ({z_m * M2FT:.2f} ft)"
-        )
+        status = f"Selected: {real_lat:.6f}°N, {real_lon:.6f}°W  Elev: {elev_str}"
         self._emit_status(status)
 
     def _emit_status(self, msg: str) -> None:
