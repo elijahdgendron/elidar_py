@@ -210,6 +210,7 @@ def _show_plotter(
         cmap=cmap,
         point_size=5,
         render_points_as_spheres=True,
+        scalar_bar_args={"n_labels": 2, "fmt": "%.0f"},
     )
 
     plotter.add_axes(
@@ -531,9 +532,8 @@ class EmbeddedSearch:
             cmap=cmap,
             point_size=5,
             render_points_as_spheres=True,
+            scalar_bar_args={"n_labels": 2, "fmt": "%.0f"},
         )
-
-        _add_instructions(self.plotter, cloud.n_points, self._is_subsampled)
 
         self.plotter.enable_point_picking(
             callback=self._on_pick,

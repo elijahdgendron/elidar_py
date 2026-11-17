@@ -477,7 +477,7 @@ class MainTab(QWidget):
                 "font-weight: bold; font-size: 13px; color: red;"
             )
         else:
-            self.mode_label.setText("CLICK TO SELECT")
+            self.mode_label.setText("CLICK TO SELECT OR DOWNSELECT")
             self.mode_label.setStyleSheet(
                 "font-weight: bold; font-size: 13px; color: green;"
             )
