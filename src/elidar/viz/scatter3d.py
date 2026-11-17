@@ -442,7 +442,12 @@ class EmbeddedSearch:
         self._working_cloud = cloud
         self._options = options
         self._crs_info = crs_info
-        self._zoom_radius = options.query_radius_deg / 2
+        # Use the actual data extent if smaller than the configured radius,
+        # so the first zoom immediately tightens the view.
+        lat_span = float(cloud.lat.max() - cloud.lat.min())
+        lon_span = float(cloud.lon.max() - cloud.lon.min())
+        data_radius = max(lat_span, lon_span) / 2
+        self._zoom_radius = min(options.query_radius_deg / 2, data_radius)
         self._picked_point = None
         self._pick_idx = None
         self._active = True
