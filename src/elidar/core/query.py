@@ -85,10 +85,14 @@ def query_lidar(
     logger.info("Points within query radius: %d", cloud.n_points)
 
     if options.clean_data and not crs_info.is_geographic:
+        # MATLAB uses 0.01 meters for voxel dedup; scale to native units
+        voxel_m = 0.01
+        voxel_native = voxel_m / crs_info.unit_to_meters if crs_info.is_foot else voxel_m
         cloud = cleaning.clean(
             cloud,
             num_neighbors=options.filter_num_neighbors,
             std_ratio=options.filter_threshold,
+            voxel_size=voxel_native,
         )
         logger.info("After cleaning: %d points", cloud.n_points)
 

@@ -111,11 +111,23 @@ def _try_crs_from_laz(las_path: Path) -> CrsInfo | None:
 
 
 def _try_wkt_vlr(vlrs: list) -> pyproj.CRS | None:
-    """Try to extract CRS from a WKT VLR (LAS 1.4+)."""
+    """Try to extract CRS from a WKT VLR (LAS 1.4+).
+
+    Handles both laspy's parsed WktCoordinateSystemVlr (has .string) and
+    raw VLR records (have .record_data bytes).
+    """
     for vlr in vlrs:
+        # laspy's parsed WKT VLR type (LAS 1.4)
+        if hasattr(vlr, "string") and vlr.string:
+            wkt = vlr.string.strip()
+            if wkt:
+                return pyproj.CRS.from_wkt(wkt)
+
+        # Raw VLR record fallback (LAS 1.2/1.3)
         if (
             getattr(vlr, "user_id", "").strip() == _LASF_PROJECTION_USER_ID
             and vlr.record_id == _WKT_RECORD_ID
+            and hasattr(vlr, "record_data")
         ):
             wkt = vlr.record_data.decode("utf-8", errors="replace").rstrip("\x00")
             if wkt.strip():

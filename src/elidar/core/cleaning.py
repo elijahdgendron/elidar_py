@@ -56,11 +56,11 @@ def downsample(
     cloud: PointCloudData,
     voxel_size: float = 0.01,
 ) -> PointCloudData:
-    """Downsample a point cloud using voxel grid averaging.
+    """Downsample a point cloud by keeping one point per voxel.
 
     Equivalent to MATLAB's pcdownsample(ptCloud, 'gridAverage', voxelSize).
-    Divides space into a voxel grid and replaces all points in each voxel
-    with their centroid.
+    Divides space into a voxel grid and keeps the first point encountered
+    in each voxel cell.
 
     :param cloud: Input point cloud.
     :param voxel_size: Edge length of each voxel in the same units as the cloud.
@@ -69,17 +69,19 @@ def downsample(
     if cloud.n_points == 0:
         return cloud
 
-    pcd = _to_open3d(cloud)
-    _, _, indices_map = pcd.voxel_down_sample_and_trace(voxel_size)
+    # Assign each point to a voxel cell
+    vx = (cloud.x / voxel_size).astype(np.int64)
+    vy = (cloud.y / voxel_size).astype(np.int64)
+    vz = (cloud.z / voxel_size).astype(np.int64)
 
-    keep = set()
-    for voxel_indices in indices_map:
-        indices = list(voxel_indices)
-        if indices:
-            keep.add(indices[0])
+    # Unique voxel keys -- keep first occurrence
+    _, unique_indices = np.unique(
+        np.column_stack([vx, vy, vz]), axis=0, return_index=True
+    )
+    unique_indices.sort()
 
     mask = np.zeros(cloud.n_points, dtype=bool)
-    mask[list(keep)] = True
+    mask[unique_indices] = True
 
     logger.debug(
         "Downsampled: %d -> %d points (voxel_size=%.4f)",
