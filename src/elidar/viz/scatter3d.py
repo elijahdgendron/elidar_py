@@ -889,11 +889,14 @@ class EmbeddedSearch:
             cls_code = int(cloud.classification[self._pick_idx])
             cls_name = ASPRS_CLASSIFICATION_NAMES.get(cls_code, f"Class {cls_code}")
 
-        elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
-        status_plotter = f"{cls_name}  {real_lat:.6f}°N, {real_lon:.6f}°W  {elev_str}"
-        _update_status(self.plotter, real_lat, real_lon, elev_str, cls_name)
+        if self._display_feet:
+            elev_display = f"{z_m * M2FT:.2f} ft"
+        else:
+            elev_display = f"{z_m:.2f} m"
+        elev_log = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
+        _update_status(self.plotter, real_lat, real_lon, elev_display, cls_name)
 
-        status = f"Selected: {cls_name}  {real_lat:.6f}°N, {real_lon:.6f}°W  Elev: {elev_str}"
+        status = f"Selected: {cls_name}  {real_lat:.6f}°N, {real_lon:.6f}°W  Elev: {elev_log}"
         self._emit_status(status)
 
     def _emit_status(self, msg: str) -> None:
