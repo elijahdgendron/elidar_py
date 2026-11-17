@@ -26,8 +26,8 @@ _GREYSCALE_CMAP = LinearSegmentedColormap.from_list(
 _ICE_CMAP = LinearSegmentedColormap.from_list(
     "elidar_ice",
     [
-        (0.05, 0.05, 0.30),  # deep navy
-        (0.15, 0.35, 0.65),  # steel blue
+        (0.45, 0.45, 0.48),  # medium gray
+        (0.30, 0.50, 0.70),  # steel blue
         (0.40, 0.70, 0.90),  # ice blue
         (0.75, 0.90, 0.97),  # frost
         (0.95, 0.98, 1.00),  # near-white
