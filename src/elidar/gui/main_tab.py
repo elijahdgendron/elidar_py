@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -21,6 +22,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -144,9 +146,27 @@ class MainTab(QWidget):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 3D viewer
+        # 3D viewer area with placeholder
+        self.viewer_stack = QStackedWidget()
+        self.viewer_stack.setMinimumHeight(300)
+
+        # Page 0: placeholder
+        placeholder = QFrame()
+        placeholder.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
+        placeholder.setStyleSheet(
+            "QFrame { background: #1a1a2e; border: 1px solid #444; border-radius: 4px; }"
+        )
+        ph_layout = QVBoxLayout(placeholder)
+        ph_label = QLabel("3D LiDAR Viewer\n\nAdd files and click Analyze\nto load point cloud data")
+        ph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ph_label.setStyleSheet("color: #888; font-size: 14px; border: none; background: transparent;")
+        ph_layout.addWidget(ph_label)
+        self.viewer_stack.addWidget(placeholder)
+
+        # Page 1: pyvista plotter
         self.plotter = QtInteractor(self)
-        self.plotter.setMinimumHeight(300)
+        self.viewer_stack.addWidget(self.plotter)
+
         self.embedded_search = EmbeddedSearch(
             self.plotter,
             on_status=self._on_search_status,
@@ -190,7 +210,7 @@ class MainTab(QWidget):
 
         # Assemble right side
         right_layout.addWidget(self.mode_label)
-        right_layout.addWidget(self.plotter, stretch=1)
+        right_layout.addWidget(self.viewer_stack, stretch=1)
         right_layout.addLayout(btn_bar)
         right_layout.addWidget(bottom)
 
@@ -443,6 +463,7 @@ class MainTab(QWidget):
         self.analyze_btn.setText("Analyze")
 
         options = self._get_options()
+        self.viewer_stack.setCurrentIndex(1)
         self.embedded_search.load(cloud, crs_info, options)
 
         self._set_search_controls(True)
@@ -496,6 +517,7 @@ class MainTab(QWidget):
         self.embedded_search.cancel()
         self._set_search_controls(False)
         self.mode_label.setText("")
+        self.viewer_stack.setCurrentIndex(0)
         self.results_text.append("Search cancelled.\n")
 
     # --- Search callbacks ---
