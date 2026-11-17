@@ -258,6 +258,9 @@ def _reproject(cloud: PointCloudData, crs_info: CrsInfo) -> PointCloudData:
     return cloud
 
 
+_M_PER_DEG_LAT = 111_320.0
+
+
 def _spatial_filter(
     cloud: PointCloudData,
     query_lat: float,
@@ -266,16 +269,21 @@ def _spatial_filter(
 ) -> PointCloudData:
     """Filter point cloud to points within a radius of the query location.
 
-    Uses simple Euclidean distance in degree space, matching the MATLAB version.
+    Distance is computed in meters so the filter is a true circle on
+    the ground, not an ellipse from degree-space Euclidean distance.
 
     :param cloud: Point cloud with lat/lon populated.
     :param query_lat: Query latitude in degrees.
     :param query_lon: Query longitude in degrees.
-    :param radius_deg: Search radius in degrees.
+    :param radius_deg: Search radius in degrees (converted to meters internally).
     :return: Filtered point cloud.
     """
-    dist = np.sqrt((cloud.lat - query_lat) ** 2 + (cloud.lon - query_lon) ** 2)
-    mask = dist <= radius_deg
+    radius_m = radius_deg * _M_PER_DEG_LAT
+    m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(query_lat))
+    dlat_m = (cloud.lat - query_lat) * _M_PER_DEG_LAT
+    dlon_m = (cloud.lon - query_lon) * m_per_deg_lon
+    dist_m = np.sqrt(dlat_m ** 2 + dlon_m ** 2)
+    mask = dist_m <= radius_m
     return cloud.subset(mask)
 
 
