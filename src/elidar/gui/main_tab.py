@@ -456,12 +456,15 @@ class MainTab(QWidget):
         self._class_color_combos.clear()
         self._class_visible_checks.clear()
 
+        # If ground (2) is present, default to showing only ground.
+        # Otherwise show all classes so the view isn't empty.
+        has_ground = 2 in classifications
+
         for cls in sorted(classifications):
             row = QHBoxLayout()
 
-            # Default: only Ground (2) is visible
             check = QCheckBox()
-            check.setChecked(cls == 2)
+            check.setChecked(cls == 2 if has_ground else True)
             check.toggled.connect(lambda checked, c=cls: self._on_class_visibility_toggled(c, checked))
             self._class_visible_checks[cls] = check
             row.addWidget(check)
