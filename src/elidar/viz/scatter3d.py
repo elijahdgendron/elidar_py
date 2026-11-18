@@ -423,6 +423,7 @@ class EmbeddedSearch:
         self._class_cmaps: dict[int, ColorScale] = {}
         self._class_actors: dict[int, object] = {}
         self._visible_classes: set[int] | None = None
+        self._marker_actor: object | None = None
         self._polydata: pv.PolyData | None = None
 
     @property
@@ -777,13 +778,18 @@ class EmbeddedSearch:
         if self._selected_lat is None:
             return
 
+        # Remove old marker if it exists
+        if self._marker_actor is not None:
+            self.plotter.remove_actor(self._marker_actor)
+            self._marker_actor = None
+
         s = self._unit_scale
         mx = (self._selected_lat - self._center_lat) * _M_PER_DEG_LAT * s
         my = (self._selected_lon - self._center_lon) * self._m_per_deg_lon * s
         mz = self._selected_z * s * self._z_exaggeration
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
-        self.plotter.add_points(
+        self._marker_actor = self.plotter.add_points(
             marker,
             color="magenta",
             point_size=10,
@@ -890,6 +896,10 @@ class EmbeddedSearch:
         self._display_cloud = None
         self._picked_point = None
         self._pick_idx = None
+        self._selected_lat = None
+        self._selected_lon = None
+        self._selected_z = None
+        self._marker_actor = None
         self._polydata = None
         self._polydatas = []
         self._class_actors = {}
