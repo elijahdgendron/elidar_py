@@ -932,17 +932,6 @@ class EmbeddedSearch:
         mz = self._selected_z * s * self._z_exaggeration + _z_bump(self._base_plot_z)
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
-        # Outline adapts to background
-        a1 = self.plotter.add_points(
-            marker,
-            color=self._font_color,
-            point_size=30,
-            render_points_as_spheres=False,
-            show_scalar_bar=False,
-        )
-        _always_on_top(a1)
-        self._marker_actors.append(a1)
-        # Core sphere
         a2 = self.plotter.add_points(
             marker,
             color=self.marker_color,
@@ -1016,22 +1005,6 @@ class EmbeddedSearch:
         label = f" {cls_name}  {elev_str}" if cls_name else f" {elev_str}"
         marker["labels"] = [label]
 
-        a1 = self.plotter.add_points(
-            marker,
-            color=self._font_color,
-            point_size=30,
-            render_points_as_spheres=False,
-            show_scalar_bar=False,
-        )
-        _always_on_top(a1)
-        a2 = self.plotter.add_points(
-            marker,
-            color=self.marker_color,
-            point_size=18,
-            render_points_as_spheres=True,
-            show_scalar_bar=False,
-        )
-        _always_on_top(a2)
         self.plotter.add_point_labels(
             marker,
             "labels",
