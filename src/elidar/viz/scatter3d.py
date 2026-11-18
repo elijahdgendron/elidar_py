@@ -549,19 +549,43 @@ class EmbeddedSearch:
         return result
 
     def _add_selection_marker(self, result: PickResult) -> None:
-        """Add a bright marker at the selected point on the full view."""
+        """Add a bright marker and annotation at the selected point."""
         s = self._unit_scale
         mx = (result.lat - self._center_lat) * _M_PER_DEG_LAT * s
         my = (result.lon - self._center_lon) * self._m_per_deg_lon * s
         mz = result.z * s * self._z_exaggeration
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
+
+        if self._display_feet:
+            elev_str = f"{result.z * M2FT:.1f} ft"
+        else:
+            elev_str = f"{result.z:.1f} m"
+
+        from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
+        cls_name = ""
+        if result.classification is not None:
+            cls_name = ASPRS_CLASSIFICATION_NAMES.get(result.classification, f"Class {result.classification}")
+
+        label = f" {cls_name}  {elev_str}" if cls_name else f" {elev_str}"
+        marker["labels"] = [label]
+
         self.plotter.add_points(
             marker,
-            color="red",
+            color="magenta",
             point_size=20,
             render_points_as_spheres=True,
             show_scalar_bar=False,
+        )
+        self.plotter.add_point_labels(
+            marker,
+            "labels",
+            font_size=14,
+            text_color="magenta",
+            bold=True,
+            shadow=True,
+            shape=None,
+            show_points=False,
         )
         self.plotter.render()
 
