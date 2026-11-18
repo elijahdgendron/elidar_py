@@ -536,6 +536,11 @@ class EmbeddedSearch:
             self._working_cloud.n_points,
         )
 
+        # Clear saddle overlays — indices are stale after zoom resamples
+        self._path_indices = None
+        self._peak_a_idx = None
+        self._peak_b_idx = None
+
         self._preserve_camera = True
         self._render()
         self._restore_selection()
