@@ -690,6 +690,22 @@ class EmbeddedSearch:
         y_m = (cloud.lon[vis_indices] - self._center_lon) * self._m_per_deg_lon
         z_m = cloud.z[vis_indices].astype(np.float64)
 
+        # Delaunay triangulation (needed for both peak detection and pathfinding)
+        pts_2d = np.column_stack([x_m, y_m])
+        try:
+            tri = Delaunay(pts_2d)
+        except Exception:
+            self._emit_status("Triangulation failed — points may be collinear")
+            return
+
+        # Build neighbor adjacency from triangulation
+        neighbors: dict[int, set[int]] = {i: set() for i in range(n_vis)}
+        for simplex in tri.simplices:
+            for i in range(3):
+                for j in range(i + 1, 3):
+                    neighbors[int(simplex[i])].add(int(simplex[j]))
+                    neighbors[int(simplex[j])].add(int(simplex[i]))
+
         # Determine peaks in the visible subset's local index space
         if peak_a_idx is not None and peak_b_idx is not None:
             a_map = np.where(vis_indices == peak_a_idx)[0]
@@ -699,16 +715,34 @@ class EmbeddedSearch:
                 return
             a_local, b_local = int(a_map[0]), int(b_map[0])
         else:
-            # Auto-detect: highest point + highest point far away
-            a_local = int(np.argmax(z_m))
-            dist_from_a = np.sqrt((x_m - x_m[a_local]) ** 2 + (y_m - y_m[a_local]) ** 2)
-            extent = max(x_m.max() - x_m.min(), y_m.max() - y_m.min())
-            min_sep = 0.25 * extent
-            far_mask = dist_from_a > min_sep
-            if far_mask.any():
-                candidates = np.where(far_mask)[0]
-                b_local = candidates[int(np.argmax(z_m[candidates]))]
+            # Find local maxima: points higher than all Delaunay neighbors
+            local_maxima = []
+            for i in range(n_vis):
+                if all(z_m[i] >= z_m[nb] for nb in neighbors[i]):
+                    local_maxima.append(i)
+
+            # Sort by elevation descending
+            local_maxima.sort(key=lambda i: z_m[i], reverse=True)
+
+            if len(local_maxima) >= 2:
+                a_local = local_maxima[0]
+                # Pick the second-highest local max that's not too close
+                extent = max(x_m.max() - x_m.min(), y_m.max() - y_m.min())
+                min_sep = 0.1 * extent
+                b_local = local_maxima[1]
+                for candidate in local_maxima[1:]:
+                    d = np.sqrt((x_m[candidate] - x_m[a_local]) ** 2
+                                + (y_m[candidate] - y_m[a_local]) ** 2)
+                    if d > min_sep:
+                        b_local = candidate
+                        break
+            elif len(local_maxima) == 1:
+                a_local = local_maxima[0]
+                z_copy = z_m.copy()
+                z_copy[a_local] = -np.inf
+                b_local = int(np.argmax(z_copy))
             else:
+                a_local = int(np.argmax(z_m))
                 z_copy = z_m.copy()
                 z_copy[a_local] = -np.inf
                 b_local = int(np.argmax(z_copy))
@@ -717,14 +751,6 @@ class EmbeddedSearch:
             f"Finding saddle between peaks at "
             f"{z_m[a_local]:.1f} m and {z_m[b_local]:.1f} m..."
         )
-
-        # Delaunay triangulation for graph connectivity
-        pts_2d = np.column_stack([x_m, y_m])
-        try:
-            tri = Delaunay(pts_2d)
-        except Exception:
-            self._emit_status("Triangulation failed — points may be collinear")
-            return
 
         # Extract unique edges with min-elevation weights
         edge_set: set[tuple[int, int]] = set()
