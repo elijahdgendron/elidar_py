@@ -583,143 +583,179 @@ class EmbeddedSearch:
             f"{self._selected_lon:.6f}°W  Elev: {elev_log}"
         )
 
-    def find_saddle(self) -> None:
-        """Fit a quadratic surface and select the saddle point."""
+    def find_saddle(self, peak_a_idx: int | None = None, peak_b_idx: int | None = None) -> None:
+        """Find the key col using minimax pathfinding between two peaks.
+
+        Uses Kruskal's Maximum Spanning Tree approach: builds a Delaunay
+        graph, sorts edges by minimum endpoint elevation descending, then
+        merges components until the two peaks connect. The connecting
+        edge's lower endpoint is the key col by definition.
+
+        :param peak_a_idx: Index of first peak in display cloud, or None for auto.
+        :param peak_b_idx: Index of second peak in display cloud, or None for auto.
+        """
+        from scipy.spatial import Delaunay
+
         if not self._active or self._display_cloud is None:
             return
 
         cloud = self._display_cloud
 
-        # Get visible points in local meters (always work in meters)
+        # Build visible mask and index mapping
         visible_mask = None
         if self._visible_classes is not None and cloud.classification is not None:
             visible_mask = np.isin(cloud.classification, list(self._visible_classes))
             if not np.any(visible_mask):
-                self._emit_status("No visible points for saddle fit")
+                self._emit_status("No visible points for saddle search")
                 return
 
-        # Local meter coordinates (unscaled by display unit)
-        x_m = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT
-        y_m = (cloud.lon - self._center_lon) * self._m_per_deg_lon
-        z_m = cloud.z.astype(np.float64)
-
         if visible_mask is not None:
-            x_m = x_m[visible_mask]
-            y_m = y_m[visible_mask]
-            z_m = z_m[visible_mask]
+            vis_indices = np.where(visible_mask)[0]
+        else:
+            vis_indices = np.arange(cloud.n_points)
 
-        if len(z_m) < 50:
-            self._emit_status("Too few points for saddle fit (need >= 50)")
+        n_vis = len(vis_indices)
+        if n_vis < 50:
+            self._emit_status("Too few points for saddle search (need >= 50)")
             return
 
-        # Fit z = ax² + bxy + cy² + dx + ey + f
-        A = np.column_stack([x_m**2, x_m * y_m, y_m**2, x_m, y_m, np.ones_like(x_m)])
-        coeffs, _, _, _ = np.linalg.lstsq(A, z_m, rcond=None)
-        a, b, c, d, e, f_coeff = coeffs
+        x_m = (cloud.lat[vis_indices] - self._center_lat) * _M_PER_DEG_LAT
+        y_m = (cloud.lon[vis_indices] - self._center_lon) * self._m_per_deg_lon
+        z_m = cloud.z[vis_indices].astype(np.float64)
 
-        # Hessian: [[2a, b], [b, 2c]]
-        det_H = 4 * a * c - b ** 2
-        if det_H >= 0:
-            self._emit_status("No saddle found — surface is a bowl or dome here. Try a different area.")
-            return
+        # Determine peaks in the visible subset's local index space
+        if peak_a_idx is not None and peak_b_idx is not None:
+            a_map = np.where(vis_indices == peak_a_idx)[0]
+            b_map = np.where(vis_indices == peak_b_idx)[0]
+            if len(a_map) == 0 or len(b_map) == 0:
+                self._emit_status("Selected peaks are not visible points")
+                return
+            a_local, b_local = int(a_map[0]), int(b_map[0])
+        else:
+            # Auto-detect: highest point + highest point far away
+            a_local = int(np.argmax(z_m))
+            dist_from_a = np.sqrt((x_m - x_m[a_local]) ** 2 + (y_m - y_m[a_local]) ** 2)
+            extent = max(x_m.max() - x_m.min(), y_m.max() - y_m.min())
+            min_sep = 0.25 * extent
+            far_mask = dist_from_a > min_sep
+            if far_mask.any():
+                candidates = np.where(far_mask)[0]
+                b_local = candidates[int(np.argmax(z_m[candidates]))]
+            else:
+                z_copy = z_m.copy()
+                z_copy[a_local] = -np.inf
+                b_local = int(np.argmax(z_copy))
 
-        # Critical point (gradient = 0)
-        H = np.array([[2 * a, b], [b, 2 * c]])
-        try:
-            critical = np.linalg.solve(H, np.array([-d, -e]))
-        except np.linalg.LinAlgError:
-            self._emit_status("Saddle fit failed — degenerate surface")
-            return
-
-        cx_m, cy_m = critical[0], critical[1]
-
-        # Check critical point is within data extent
-        margin = 0.1 * max(x_m.max() - x_m.min(), y_m.max() - y_m.min())
-        if (cx_m < x_m.min() - margin or cx_m > x_m.max() + margin or
-                cy_m < y_m.min() - margin or cy_m > y_m.max() + margin):
-            self._emit_status("Saddle point is outside the visible area. Try panning or zooming differently.")
-            return
-
-        # Saddle elevation from the fit
-        saddle_z_m = float(
-            a * cx_m**2 + b * cx_m * cy_m + c * cy_m**2 + d * cx_m + e * cy_m + f_coeff
+        self._emit_status(
+            f"Finding saddle between peaks at "
+            f"{z_m[a_local]:.1f} m and {z_m[b_local]:.1f} m..."
         )
-        saddle_lat = cx_m / _M_PER_DEG_LAT + self._center_lat
-        saddle_lon = cy_m / self._m_per_deg_lon + self._center_lon
 
-        # Find nearest LiDAR point to the saddle in the full display cloud
-        all_x_m = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT
-        all_y_m = (cloud.lon - self._center_lon) * self._m_per_deg_lon
-        dist = (all_x_m - cx_m) ** 2 + (all_y_m - cy_m) ** 2
-        if visible_mask is not None:
-            dist = np.where(visible_mask, dist, np.inf)
-        nearest_idx = int(np.argmin(dist))
+        # Delaunay triangulation for graph connectivity
+        pts_2d = np.column_stack([x_m, y_m])
+        try:
+            tri = Delaunay(pts_2d)
+        except Exception:
+            self._emit_status("Triangulation failed — points may be collinear")
+            return
+
+        # Extract unique edges with min-elevation weights
+        edge_set: set[tuple[int, int]] = set()
+        edges: list[tuple[float, int, int]] = []
+        for simplex in tri.simplices:
+            for i in range(3):
+                for j in range(i + 1, 3):
+                    a_e, b_e = int(simplex[i]), int(simplex[j])
+                    key = (min(a_e, b_e), max(a_e, b_e))
+                    if key not in edge_set:
+                        edge_set.add(key)
+                        w = min(z_m[a_e], z_m[b_e])
+                        edges.append((w, a_e, b_e))
+
+        # Sort edges by weight descending (highest first)
+        edges.sort(reverse=True)
+
+        # Union-Find: add edges until the two peaks are connected
+        parent = list(range(n_vis))
+        uf_rank = [0] * n_vis
+
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(x: int, y: int) -> None:
+            px, py = find(x), find(y)
+            if px == py:
+                return
+            if uf_rank[px] < uf_rank[py]:
+                px, py = py, px
+            parent[py] = px
+            if uf_rank[px] == uf_rank[py]:
+                uf_rank[px] += 1
+
+        saddle_local = None
+        for w, ea, eb in edges:
+            union(ea, eb)
+            if find(a_local) == find(b_local):
+                saddle_local = ea if z_m[ea] < z_m[eb] else eb
+                break
+
+        if saddle_local is None:
+            self._emit_status("Could not find a connecting path between peaks")
+            return
+
+        # Map back to display cloud index
+        saddle_idx = int(vis_indices[saddle_local])
 
         # Set as current selection
-        self._pick_idx = nearest_idx
-        self._selected_lat = float(cloud.lat[nearest_idx])
-        self._selected_lon = float(cloud.lon[nearest_idx])
-        self._selected_z = float(cloud.z[nearest_idx])
+        self._pick_idx = saddle_idx
+        self._selected_lat = float(cloud.lat[saddle_idx])
+        self._selected_lon = float(cloud.lon[saddle_idx])
+        self._selected_z = float(cloud.z[saddle_idx])
 
         s = self._unit_scale
         self._picked_point = np.array([
-            self._display_x[nearest_idx],
-            self._display_y[nearest_idx],
-            cloud.z[nearest_idx] * s * self._z_exaggeration,
+            self._display_x[saddle_idx],
+            self._display_y[saddle_idx],
+            cloud.z[saddle_idx] * s * self._z_exaggeration,
         ])
 
-        # Show the fitted surface as a transparent mesh
-        self._show_saddle_surface(x_m, y_m, coeffs)
         self._show_selection_marker()
         self._show_selection_status()
 
-        # Emit detailed saddle info
+        # Show peak markers in green
+        self._show_peak_markers(int(vis_indices[a_local]), int(vis_indices[b_local]))
+
+        # Emit result
         if self._display_unit != "m":
-            fit_elev = f"{saddle_z_m * self._unit_scale:.2f} {self._display_unit}"
-            near_elev = f"{self._selected_z * self._unit_scale:.2f} {self._display_unit}"
+            elev = f"{self._selected_z * self._unit_scale:.2f}"
         else:
-            fit_elev = f"{saddle_z_m:.2f} m"
-            near_elev = f"{self._selected_z:.2f} m"
+            elev = f"{self._selected_z:.2f}"
 
         self._emit_status(
-            f"Saddle fit: {saddle_lat:.6f}°N, {saddle_lon:.6f}°W  "
-            f"Fit elev: {fit_elev}  |  "
-            f"Nearest point elev: {near_elev}"
+            f"Key col found: {self._selected_lat:.6f}°N, {self._selected_lon:.6f}°W  "
+            f"Elev: {elev} {self._display_unit}  "
+            f"(minimax path between {z_m[a_local]:.1f} m and {z_m[b_local]:.1f} m peaks)"
         )
 
-    def _show_saddle_surface(
-        self,
-        x_m: np.ndarray,
-        y_m: np.ndarray,
-        coeffs: np.ndarray,
-    ) -> None:
-        """Render the fitted quadratic surface as a transparent mesh."""
-        a, b, c, d, e, f_coeff = coeffs
+    def _show_peak_markers(self, idx_a: int, idx_b: int) -> None:
+        """Show small green markers at the two peak reference points."""
+        cloud = self._display_cloud
         s = self._unit_scale
-
-        # Create a grid over the data extent
-        n_grid = 40
-        xi = np.linspace(x_m.min(), x_m.max(), n_grid)
-        yi = np.linspace(y_m.min(), y_m.max(), n_grid)
-        xx, yy = np.meshgrid(xi, yi)
-        zz = a * xx**2 + b * xx * yy + c * yy**2 + d * xx + e * yy + f_coeff
-
-        # Convert to display coordinates
-        px = xx.ravel() * s
-        py = yy.ravel() * s
-        pz = zz.ravel() * s * self._z_exaggeration
-
-        grid = pv.StructuredGrid()
-        grid.points = np.column_stack([px, py, pz])
-        grid.dimensions = [n_grid, n_grid, 1]
-
-        self.plotter.add_mesh(
-            grid,
-            color="cyan",
-            opacity=0.3,
-            show_scalar_bar=False,
-            name="saddle_surface",
-        )
+        for idx in (idx_a, idx_b):
+            mx = self._display_x[idx]
+            my = self._display_y[idx]
+            mz = cloud.z[idx] * s * self._z_exaggeration
+            marker = pv.PolyData(np.array([[mx, my, mz]]))
+            self.plotter.add_points(
+                marker,
+                color="lime",
+                point_size=12,
+                render_points_as_spheres=True,
+                show_scalar_bar=False,
+            )
         self.plotter.render()
 
     def _restore_selection(self) -> None:

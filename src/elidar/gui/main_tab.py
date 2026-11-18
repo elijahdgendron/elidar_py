@@ -419,10 +419,26 @@ class MainTab(QWidget):
         view_bar.addWidget(self.find_peak_btn)
 
         self.find_saddle_btn = QPushButton("Find Saddle")
-        self.find_saddle_btn.setToolTip("Fit quadratic surface to find saddle point (zoom in first)")
+        self.find_saddle_btn.setToolTip(
+            "Find key col via minimax path (auto-detects peaks, or use Select Peaks first)"
+        )
         self.find_saddle_btn.setEnabled(False)
         self.find_saddle_btn.clicked.connect(self._on_find_saddle)
         view_bar.addWidget(self.find_saddle_btn)
+
+        self.select_peaks_btn = QPushButton("Select Peaks")
+        self.select_peaks_btn.setToolTip(
+            "Click two points as peak references, then Find Saddle"
+        )
+        self.select_peaks_btn.setCheckable(True)
+        self.select_peaks_btn.setEnabled(False)
+        self.select_peaks_btn.toggled.connect(self._on_select_peaks_toggled)
+        view_bar.addWidget(self.select_peaks_btn)
+
+        # State for manual peak selection
+        self._manual_peak_a: int | None = None
+        self._manual_peak_b: int | None = None
+        self._peak_select_mode: bool = False
 
         # Assemble right side
         right_layout.addLayout(view_bar)
@@ -864,9 +880,11 @@ class MainTab(QWidget):
                 "font-weight: bold; font-size: 13px; color: green;"
             )
 
-        # Enable saddle fit when zoomed in enough (50-5000 visible points)
+        # Enable saddle when zoomed in enough (50-5000 visible points)
         n = self.embedded_search.visible_point_count
-        self.find_saddle_btn.setEnabled(50 <= n <= 5000)
+        saddle_ok = 50 <= n <= 5000
+        self.find_saddle_btn.setEnabled(saddle_ok)
+        self.select_peaks_btn.setEnabled(saddle_ok)
 
     def _on_find_peak(self) -> None:
         self._last_select_type = "Peak"
@@ -874,7 +892,25 @@ class MainTab(QWidget):
 
     def _on_find_saddle(self) -> None:
         self._last_select_type = "Saddle"
-        self.embedded_search.find_saddle()
+        if self._manual_peak_a is not None and self._manual_peak_b is not None:
+            self.embedded_search.find_saddle(self._manual_peak_a, self._manual_peak_b)
+        else:
+            self.embedded_search.find_saddle()
+        # Reset peak selection mode
+        self._manual_peak_a = None
+        self._manual_peak_b = None
+        self._peak_select_mode = False
+        self.select_peaks_btn.setChecked(False)
+
+    def _on_select_peaks_toggled(self, checked: bool) -> None:
+        self._peak_select_mode = checked
+        if checked:
+            self._manual_peak_a = None
+            self._manual_peak_b = None
+            self._log("Peak selection mode: click Peak A, then Peak B, then Find Saddle")
+        else:
+            self._manual_peak_a = None
+            self._manual_peak_b = None
 
     def _on_zoom(self) -> None:
         scale = 1.0 / self.zoom_spin.value()
@@ -915,7 +951,17 @@ class MainTab(QWidget):
     # --- Search callbacks ---
 
     def _on_search_status(self, msg: str) -> None:
-        if msg.startswith("Selected:"):
+        if msg.startswith("Selected:") and self._peak_select_mode:
+            idx = self.embedded_search._pick_idx
+            if self._manual_peak_a is None:
+                self._manual_peak_a = idx
+                self._log("Peak A set. Now click Peak B.\n")
+                return
+            elif self._manual_peak_b is None:
+                self._manual_peak_b = idx
+                self._log("Peak B set. Click Find Saddle.\n")
+                return
+        elif msg.startswith("Selected:"):
             self._last_select_type = "Manual"
         self._log(msg + "\n")
 
