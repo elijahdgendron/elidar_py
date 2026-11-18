@@ -917,9 +917,27 @@ class EmbeddedSearch:
         )
 
         if self._preserve_camera:
-            # Keep the exact camera state — the user's manual zoom/pan/rotate.
-            # Since zoom always crops to a smaller subset, the existing camera
-            # is guaranteed to contain the new data. No reset needed.
+            # Compare the user's current camera distance to what a re-fit
+            # would produce. Keep the tighter of the two so we auto-zoom
+            # when the data shrinks a lot but don't zoom OUT if the user
+            # was already in close.
+            cam = self.plotter.camera
+            old_pos = np.array(cam.position)
+            old_fp = np.array(cam.focal_point)
+            old_up = cam.up
+            old_dist = np.linalg.norm(old_pos - old_fp)
+            direction = (old_pos - old_fp) / (old_dist + 1e-12)
+
+            self.plotter.reset_camera()
+            fit_pos = np.array(self.plotter.camera.position)
+            fit_fp = np.array(self.plotter.camera.focal_point)
+            fit_dist = np.linalg.norm(fit_pos - fit_fp)
+
+            # Use whichever is closer (tighter view)
+            use_dist = min(old_dist, fit_dist)
+            cam.focal_point = tuple(fit_fp)
+            cam.position = tuple(fit_fp + direction * use_dist)
+            cam.up = old_up
             self._preserve_camera = False
         else:
             # Default: frame on surface classes with isometric view
