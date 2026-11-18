@@ -1408,6 +1408,10 @@ class EmbeddedSearch:
             z_color=z_ax_color,
         )
 
+        # Terrain-style rotation: orbit around Z (Up) axis only,
+        # prevents flipping below the surface.
+        self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
+
         self.plotter.enable_point_picking(
             callback=self._on_pick,
             left_clicking=True,
@@ -1418,10 +1422,6 @@ class EmbeddedSearch:
             show_message=False,
             tolerance=0.025,
         )
-
-        # Terrain-style rotation: orbit around Z (Up) axis only,
-        # prevents flipping below the surface.
-        self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
 
         if self._preserve_camera:
             # Compare the user's current camera distance to what a re-fit
