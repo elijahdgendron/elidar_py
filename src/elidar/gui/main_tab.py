@@ -311,7 +311,7 @@ class MainTab(QWidget):
         exag_col.addWidget(exag_label)
 
         self.exag_slider = QSlider(Qt.Orientation.Vertical)
-        self.exag_slider.setRange(10, 200)
+        self.exag_slider.setRange(10, 100)
         self.exag_slider.setValue(10)
         self.exag_slider.setTickPosition(QSlider.TickPosition.TicksRight)
         self.exag_slider.setTickInterval(10)
@@ -792,6 +792,7 @@ class MainTab(QWidget):
         if result is not None:
             self._set_search_controls(False)
             self._update_mode_label()
+            self.exag_slider.setValue(10)  # Reset to 1.0x
 
     def _on_cancel(self) -> None:
         self.embedded_search.cancel()

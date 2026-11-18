@@ -549,6 +549,7 @@ class EmbeddedSearch:
 
         # Re-render the full original cloud with the selected point highlighted
         self._working_cloud = self._original_cloud
+        self._z_exaggeration = 1.0
         self._render()
         self._add_selection_marker(result)
 
