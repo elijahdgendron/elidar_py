@@ -573,7 +573,7 @@ class EmbeddedSearch:
         self.plotter.add_points(
             marker,
             color="magenta",
-            point_size=20,
+            point_size=10,
             render_points_as_spheres=True,
             show_scalar_bar=False,
         )
