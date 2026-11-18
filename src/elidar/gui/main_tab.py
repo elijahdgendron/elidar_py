@@ -267,10 +267,6 @@ class MainTab(QWidget):
         self.screenshot_btn.clicked.connect(self._on_screenshot)
         btn_bar.addWidget(self.screenshot_btn)
 
-        # Mode label
-        self.mode_label = QLabel("")
-        self.mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.mode_label.setStyleSheet("font-weight: bold; font-size: 13px;")
 
         # --- Result fields ---
         result_header = QLabel("Result")
@@ -403,7 +399,10 @@ class MainTab(QWidget):
 
         # View group
         view_group = QGroupBox("View")
-        view_group.setStyleSheet("QGroupBox { padding-top: 14px; }")
+        view_group.setStyleSheet(
+            "QGroupBox { padding-top: 14px; border: 1px solid #666; border-radius: 3px; }"
+            "QGroupBox::title { subcontrol-origin: margin; padding: 0 4px; }"
+        )
         view_lay = QHBoxLayout(view_group)
         view_lay.setContentsMargins(4, 2, 4, 2)
 
@@ -418,11 +417,14 @@ class MainTab(QWidget):
         view_lay.addWidget(self.view_top_btn)
 
         toolbar.addWidget(view_group)
-        toolbar.addWidget(self.mode_label, stretch=1)
+        toolbar.addStretch(1)
 
         # Util group
         util_group = QGroupBox("Util")
-        util_group.setStyleSheet("QGroupBox { padding-top: 14px; }")
+        util_group.setStyleSheet(
+            "QGroupBox { padding-top: 14px; border: 1px solid #666; border-radius: 3px; }"
+            "QGroupBox::title { subcontrol-origin: margin; padding: 0 4px; }"
+        )
         util_lay = QHBoxLayout(util_group)
         util_lay.setContentsMargins(4, 2, 4, 2)
 
@@ -883,18 +885,25 @@ class MainTab(QWidget):
 
     def _update_mode_label(self) -> None:
         if not self.embedded_search.is_active:
-            self.mode_label.setText("")
+            try:
+                self.plotter.remove_actor("mode_text")
+            except (KeyError, ValueError):
+                pass
             return
         if self.embedded_search.is_subsampled:
-            self.mode_label.setText("CLICK TO DOWNSELECT")
-            self.mode_label.setStyleSheet(
-                "font-weight: bold; font-size: 13px; color: red;"
-            )
+            text = "CLICK TO DOWNSELECT"
+            color = "red"
         else:
-            self.mode_label.setText("CLICK TO SELECT OR DOWNSELECT")
-            self.mode_label.setStyleSheet(
-                "font-weight: bold; font-size: 13px; color: green;"
-            )
+            text = "CLICK TO SELECT OR DOWNSELECT"
+            color = "lime"
+        self.plotter.add_text(
+            text,
+            position="upper_left",
+            font_size=10,
+            color=color,
+            shadow=True,
+            name="mode_text",
+        )
 
         # Enable saddle when at full resolution (not subsampled) and enough points
         n = self.embedded_search.visible_point_count
@@ -949,7 +958,7 @@ class MainTab(QWidget):
         self.embedded_search.cancel()
         self._set_search_controls(False)
         self.find_saddle_btn.setEnabled(False)
-        self.mode_label.setText("")
+        self._update_mode_label()
         self.viewer_stack.setCurrentIndex(0)
         self._log("Search cancelled.\n")
 
