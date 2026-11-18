@@ -71,6 +71,6 @@ def stretch_colormap(cmap: str | Colormap, stretch: float) -> Colormap:
 
     n = 256
     t = np.linspace(0, 1, n)
-    t_stretched = t ** (1.0 / stretch)
+    t_stretched = t ** stretch
     colors = cmap(t_stretched)
     return LinearSegmentedColormap.from_list(f"{cmap.name}_s{stretch:.1f}", colors, N=n)
