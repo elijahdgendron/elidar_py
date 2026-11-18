@@ -882,6 +882,7 @@ class EmbeddedSearch:
         """
         self._max_points = max_points
         if self._active and self._working_cloud is not None:
+            self._preserve_camera = True
             self._render()
 
     def cancel(self) -> None:
@@ -930,6 +931,7 @@ class EmbeddedSearch:
         """
         self._color_stretch = stretch
         if self._active and self._working_cloud is not None:
+            self._preserve_camera = True
             self._render()
 
     def set_class_visible(self, cls: int, visible: bool) -> None:
@@ -967,6 +969,7 @@ class EmbeddedSearch:
         self._font_color = "white" if color == "black" else "black"
         self.plotter.set_background(color)
         if self._active and self._working_cloud is not None:
+            self._preserve_camera = True
             self._render()
 
     def set_class_cmaps(self, class_cmaps: dict[int, ColorScale]) -> None:
@@ -976,6 +979,7 @@ class EmbeddedSearch:
         """
         self._class_cmaps = class_cmaps
         if self._active and self._working_cloud is not None:
+            self._preserve_camera = True
             self._render()
 
     def set_display_unit(self, display_unit: str, unit_scale: float) -> None:
@@ -987,6 +991,7 @@ class EmbeddedSearch:
         self._display_unit = display_unit
         self._unit_scale = unit_scale
         if self._active and self._working_cloud is not None:
+            self._preserve_camera = True
             self._render()
 
     def _render(self) -> None:
