@@ -563,6 +563,30 @@ class EmbeddedSearch:
         self._render()
         self._restore_selection()
 
+    def clear_overlays(self) -> None:
+        """Remove all overlay markers, path, and selections. Terrain stays."""
+        for a in self._marker_actors:
+            self.plotter.remove_actor(a)
+        self._marker_actors = []
+        self._picked_point = None
+        self._pick_idx = None
+        self._selected_lat = None
+        self._selected_lon = None
+        self._selected_z = None
+        self._path_indices = None
+        self._peak_a_idx = None
+        self._peak_b_idx = None
+        # Remove named actors
+        try:
+            self.plotter.remove_actor("saddle_path")
+        except (KeyError, ValueError):
+            pass
+        try:
+            self.plotter.remove_actor("status")
+        except (KeyError, ValueError):
+            pass
+        self.plotter.render()
+
     def reselect(self) -> None:
         """Restore the last Find Peak / Find Saddle selection."""
         if self._saved_selection is None:
@@ -844,7 +868,11 @@ class EmbeddedSearch:
             [self._display_x[i], self._display_y[i], cloud.z[i] * s * self._z_exaggeration + bump]
             for i in indices
         ])
-        line = pv.Spline(pts, n_points=len(pts))
+        line = pv.PolyData(pts, lines=np.hstack([
+            np.full((len(pts) - 1, 1), 2, dtype=int),
+            np.arange(len(pts) - 1).reshape(-1, 1),
+            np.arange(1, len(pts)).reshape(-1, 1),
+        ]).ravel())
         actor = self.plotter.add_mesh(
             line,
             color=self.path_color,

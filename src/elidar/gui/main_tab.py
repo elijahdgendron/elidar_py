@@ -424,6 +424,11 @@ class MainTab(QWidget):
         self.view_top_btn.clicked.connect(lambda: self._set_camera_view("top"))
         view_lay.addWidget(self.view_top_btn)
 
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setToolTip("Remove all overlays (markers, path, selection)")
+        self.clear_btn.clicked.connect(self._on_clear_overlays)
+        view_lay.addWidget(self.clear_btn)
+
         toolbar.addWidget(view_group)
         toolbar.addStretch(1)
 
@@ -749,6 +754,10 @@ class MainTab(QWidget):
             # Re-render to apply pick color (needs new enable_point_picking)
             self.embedded_search._preserve_camera = True
             QTimer.singleShot(0, lambda: self.embedded_search._render())
+
+    def _on_clear_overlays(self) -> None:
+        self.embedded_search.clear_overlays()
+        self._clear_result_fields()
 
     def _on_max_points_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
