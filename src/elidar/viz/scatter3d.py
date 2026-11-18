@@ -808,7 +808,7 @@ class EmbeddedSearch:
         self.plotter.add_mesh(
             line,
             color="yellow",
-            line_width=3,
+            line_width=5,
             show_scalar_bar=False,
             name="saddle_path",
         )

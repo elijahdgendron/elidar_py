@@ -396,45 +396,59 @@ class MainTab(QWidget):
         viewer_row.addWidget(self.viewer_stack, stretch=1)
         viewer_row.addLayout(sliders)
 
-        # View preset buttons
-        view_bar = QHBoxLayout()
-        view_bar.setContentsMargins(0, 0, 0, 0)
+        # Toolbar above the plot: View group | mode label | Util group
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        toolbar.setSpacing(4)
+
+        # View group
+        view_group = QGroupBox("View")
+        view_group.setStyleSheet("QGroupBox { padding-top: 14px; }")
+        view_lay = QHBoxLayout(view_group)
+        view_lay.setContentsMargins(4, 2, 4, 2)
 
         self.view_iso_btn = QPushButton("3D")
-        self.view_iso_btn.setMaximumWidth(40)
         self.view_iso_btn.setToolTip("Isometric view")
         self.view_iso_btn.clicked.connect(lambda: self._set_camera_view("iso"))
-        view_bar.addWidget(self.view_iso_btn)
+        view_lay.addWidget(self.view_iso_btn)
 
         self.view_top_btn = QPushButton("Top")
-        self.view_top_btn.setMaximumWidth(40)
         self.view_top_btn.setToolTip("Top-down view")
         self.view_top_btn.clicked.connect(lambda: self._set_camera_view("top"))
-        view_bar.addWidget(self.view_top_btn)
+        view_lay.addWidget(self.view_top_btn)
 
-        view_bar.addWidget(self.mode_label, stretch=1)
+        toolbar.addWidget(view_group)
+        toolbar.addWidget(self.mode_label, stretch=1)
+
+        # Util group
+        util_group = QGroupBox("Util")
+        util_group.setStyleSheet("QGroupBox { padding-top: 14px; }")
+        util_lay = QHBoxLayout(util_group)
+        util_lay.setContentsMargins(4, 2, 4, 2)
 
         self.find_peak_btn = QPushButton("Find Peak")
         self.find_peak_btn.setEnabled(False)
         self.find_peak_btn.clicked.connect(self._on_find_peak)
-        view_bar.addWidget(self.find_peak_btn)
+        util_lay.addWidget(self.find_peak_btn)
 
-        self.find_saddle_btn = QPushButton("Find Saddle")
+        self.find_saddle_btn = QPushButton("Auto Saddle")
         self.find_saddle_btn.setToolTip(
-            "Find key col via minimax path (auto-detects peaks, or use Select Peaks first)"
+            "Find key col via minimax path (auto-detects peaks)"
         )
         self.find_saddle_btn.setEnabled(False)
         self.find_saddle_btn.clicked.connect(self._on_find_saddle)
-        view_bar.addWidget(self.find_saddle_btn)
+        util_lay.addWidget(self.find_saddle_btn)
 
-        self.select_peaks_btn = QPushButton("Select Peaks")
+        self.select_peaks_btn = QPushButton("Manual Saddle")
         self.select_peaks_btn.setToolTip(
-            "Click two points as peak references, then Find Saddle"
+            "Click two points as peak references, then click again to find saddle"
         )
         self.select_peaks_btn.setCheckable(True)
         self.select_peaks_btn.setEnabled(False)
         self.select_peaks_btn.toggled.connect(self._on_select_peaks_toggled)
-        view_bar.addWidget(self.select_peaks_btn)
+        util_lay.addWidget(self.select_peaks_btn)
+
+        toolbar.addWidget(util_group)
 
         # State for manual peak selection
         self._manual_peak_a: int | None = None
@@ -442,7 +456,8 @@ class MainTab(QWidget):
         self._peak_select_mode: bool = False
 
         # Assemble right side
-        right_layout.addLayout(view_bar)
+        right_layout.addLayout(toolbar)
+        right_layout.addSpacing(4)
         right_layout.addLayout(viewer_row, stretch=1)
         right_layout.addLayout(btn_bar)
         right_layout.addWidget(result_header)
