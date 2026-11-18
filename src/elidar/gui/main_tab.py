@@ -238,6 +238,7 @@ class MainTab(QWidget):
             self.plotter,
             on_status=self._on_search_status,
             on_result=self._on_search_result,
+            on_render=self._update_mode_label,
         )
 
         # Search control buttons

@@ -398,10 +398,12 @@ class EmbeddedSearch:
         plotter: pv.Plotter,
         on_status: callable | None = None,
         on_result: callable | None = None,
+        on_render: callable | None = None,
     ) -> None:
         self.plotter = plotter
         self.on_status = on_status
         self.on_result = on_result
+        self.on_render = on_render
 
         self._working_cloud: PointCloudData | None = None
         self._display_cloud: PointCloudData | None = None
@@ -1420,6 +1422,8 @@ class EmbeddedSearch:
             self.plotter.camera_position = "xz"
             self.plotter.camera.elevation = 25
             self.plotter.camera.azimuth = -60
+        if self.on_render:
+            self.on_render()
         self.plotter.render()
 
     def _on_pick(self, point: np.ndarray) -> None:
