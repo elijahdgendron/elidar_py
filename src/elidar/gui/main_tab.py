@@ -648,6 +648,13 @@ class MainTab(QWidget):
             "magenta", "cyan", "lime", "yellow", "red", "orange", "white", "pink",
         ]
 
+        self.pick_color_combo = QComboBox()
+        for c in color_choices:
+            self.pick_color_combo.addItem(c.capitalize(), c)
+        self.pick_color_combo.setCurrentText("Red")
+        self.pick_color_combo.currentIndexChanged.connect(self._on_overlay_color_changed)
+        colors_form.addRow("Current Pick:", self.pick_color_combo)
+
         self.marker_color_combo = QComboBox()
         for c in color_choices:
             self.marker_color_combo.addItem(c.capitalize(), c)
@@ -732,11 +739,14 @@ class MainTab(QWidget):
             QTimer.singleShot(0, lambda: self.embedded_search.set_point_size(value))
 
     def _on_overlay_color_changed(self) -> None:
+        self.embedded_search.pick_color = self.pick_color_combo.currentData()
         self.embedded_search.marker_color = self.marker_color_combo.currentData()
         self.embedded_search.peak_color = self.peak_color_combo.currentData()
         self.embedded_search.path_color = self.path_color_combo.currentData()
         if self.embedded_search.is_active:
-            QTimer.singleShot(0, lambda: self.embedded_search._restore_selection())
+            # Re-render to apply pick color (needs new enable_point_picking)
+            self.embedded_search._preserve_camera = True
+            QTimer.singleShot(0, lambda: self.embedded_search._render())
 
     def _on_max_points_changed(self, value: int) -> None:
         if self.embedded_search.is_active:

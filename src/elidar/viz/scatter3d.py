@@ -430,6 +430,7 @@ class EmbeddedSearch:
         self._saved_selection: tuple[float, float, float] | None = None
         # Configurable colors
         self.marker_color: str = "magenta"
+        self.pick_color: str = "red"
         self.peak_color: str = "lime"
         self.path_color: str = "cyan"
         self._polydata: pv.PolyData | None = None
@@ -1337,7 +1338,7 @@ class EmbeddedSearch:
             left_clicking=True,
             picker="point",
             show_point=True,
-            color="red",
+            color=self.pick_color,
             point_size=15,
             show_message=False,
             tolerance=0.025,
