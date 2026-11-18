@@ -173,6 +173,7 @@ class MainTab(QWidget):
         self._last_result = None
         self._last_crs_name: str = ""
         self._last_select_type: str = ""
+        self._saved_select_type: str = ""
         self._tools_tab = None
 
         layout = QHBoxLayout(self)
@@ -969,14 +970,18 @@ class MainTab(QWidget):
         self.select_peaks_btn.setEnabled(saddle_ok)
 
     def _on_reselect(self) -> None:
+        if self._saved_select_type:
+            self._last_select_type = self._saved_select_type
         self.embedded_search.reselect()
 
     def _on_find_peak(self) -> None:
         self._last_select_type = "Peak"
+        self._saved_select_type = "Peak"
         self.embedded_search.find_peak()
 
     def _on_find_saddle(self) -> None:
         self._last_select_type = "Saddle"
+        self._saved_select_type = "Saddle"
         if self._manual_peak_a is not None and self._manual_peak_b is not None:
             self.embedded_search.find_saddle(self._manual_peak_a, self._manual_peak_b)
         else:
