@@ -465,6 +465,7 @@ class EmbeddedSearch:
         self._pick_idx = None
         self._active = True
         self._max_points = max_points
+        self._preserve_camera = False
         self._display_feet = display_feet
         self._unit_scale = M2FT if display_feet else 1.0
         self._class_cmaps = class_cmaps if class_cmaps is not None else {}
@@ -511,6 +512,7 @@ class EmbeddedSearch:
 
         self._picked_point = None
         self._pick_idx = None
+        self._preserve_camera = True
         self._render()
 
     def done(self) -> PickResult | None:
@@ -899,28 +901,46 @@ class EmbeddedSearch:
             tolerance=0.025,
         )
 
-        # Frame camera on surface class actors (Ground + Snow/Ice)
-        surface_bounds = []
-        for sc in SURFACE_CLASSES:
-            actor = self._class_actors.get(sc)
-            if actor is not None:
-                surface_bounds.append(actor.GetBounds())
-        if surface_bounds:
-            # Merge bounds: (xmin, xmax, ymin, ymax, zmin, zmax)
-            merged = [
-                min(b[0] for b in surface_bounds),
-                max(b[1] for b in surface_bounds),
-                min(b[2] for b in surface_bounds),
-                max(b[3] for b in surface_bounds),
-                min(b[4] for b in surface_bounds),
-                max(b[5] for b in surface_bounds),
-            ]
-            self.plotter.reset_camera(bounds=merged)
-        else:
+        if self._preserve_camera:
+            # Keep current viewing angle, just re-fit to new data extent
+            cam = self.plotter.camera
+            old_up = cam.up
+            old_pos = cam.position
+            old_fp = cam.focal_point
+            # Compute the direction vector (normalized)
+            direction = np.array(old_pos) - np.array(old_fp)
+            direction = direction / (np.linalg.norm(direction) + 1e-12)
+
             self.plotter.reset_camera()
-        self.plotter.camera_position = "xz"
-        self.plotter.camera.elevation = 25
-        self.plotter.camera.azimuth = -60
+            # Restore the same viewing direction from the new focal point
+            new_fp = self.plotter.camera.focal_point
+            dist = np.linalg.norm(np.array(self.plotter.camera.position) - np.array(new_fp))
+            cam.focal_point = new_fp
+            cam.position = tuple(np.array(new_fp) + direction * dist)
+            cam.up = old_up
+            self._preserve_camera = False
+        else:
+            # Default: frame on surface classes with isometric view
+            surface_bounds = []
+            for sc in SURFACE_CLASSES:
+                actor = self._class_actors.get(sc)
+                if actor is not None:
+                    surface_bounds.append(actor.GetBounds())
+            if surface_bounds:
+                merged = [
+                    min(b[0] for b in surface_bounds),
+                    max(b[1] for b in surface_bounds),
+                    min(b[2] for b in surface_bounds),
+                    max(b[3] for b in surface_bounds),
+                    min(b[4] for b in surface_bounds),
+                    max(b[5] for b in surface_bounds),
+                ]
+                self.plotter.reset_camera(bounds=merged)
+            else:
+                self.plotter.reset_camera()
+            self.plotter.camera_position = "xz"
+            self.plotter.camera.elevation = 25
+            self.plotter.camera.azimuth = -60
         self.plotter.render()
 
     def _on_pick(self, point: np.ndarray) -> None:
