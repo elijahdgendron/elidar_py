@@ -29,7 +29,10 @@ class ColorScale(str, Enum):
     BR = "br"
 
 
-M2FT = 3.2808398950131233
+US_SURVEY_FOOT_TO_M = 0.30480060960121924
+INTL_FOOT_TO_M = 0.3048
+M2FT = 1.0 / INTL_FOOT_TO_M
+M2FT_SURVEY = 1.0 / US_SURVEY_FOOT_TO_M
 
 ASPRS_CLASSIFICATION_NAMES: dict[int, str] = {
     0: "Never Classified",
@@ -66,8 +69,6 @@ DEFAULT_CLASS_CMAPS: dict[int, ColorScale] = {
     21: ColorScale.ICE,
 }
 DEFAULT_CMAP = ColorScale.JET
-US_SURVEY_FOOT_TO_M = 0.30480060960121924
-INTL_FOOT_TO_M = 0.3048
 
 
 @dataclass

@@ -38,6 +38,7 @@ from elidar.core.types import (
     DEFAULT_CLASS_CMAPS,
     DEFAULT_CMAP,
     M2FT,
+    M2FT_SURVEY,
     QueryOptions,
     QueryResult,
     QueryType,
@@ -170,6 +171,8 @@ class MainTab(QWidget):
         self.settings = settings
         self._worker: QThread | None = None
         self._last_result = None
+        self._last_crs_name: str = ""
+        self._last_select_type: str = ""
         self._tools_tab = None
 
         layout = QHBoxLayout(self)
@@ -238,20 +241,16 @@ class MainTab(QWidget):
 
         # Search control buttons
         btn_bar = QHBoxLayout()
-        btn_bar.setSpacing(4)
 
-        # Zoom pair grouped together
-        zoom_group = QHBoxLayout()
-        zoom_group.setSpacing(0)
         self.zoom_btn = QPushButton("Zoom (Z)")
         self.zoom_btn.clicked.connect(self._on_zoom)
         self.zoom_btn.setEnabled(False)
-        zoom_group.addWidget(self.zoom_btn, stretch=2)
+        btn_bar.addWidget(self.zoom_btn)
+
         self.fine_zoom_btn = QPushButton("Fine (F)")
         self.fine_zoom_btn.clicked.connect(self._on_fine_zoom)
         self.fine_zoom_btn.setEnabled(False)
-        zoom_group.addWidget(self.fine_zoom_btn, stretch=1)
-        btn_bar.addLayout(zoom_group)
+        btn_bar.addWidget(self.fine_zoom_btn)
 
         self.done_btn = QPushButton("Done (D)")
         self.done_btn.clicked.connect(self._on_done)
@@ -276,32 +275,59 @@ class MainTab(QWidget):
         result_header = QLabel("Result")
         result_header.setStyleSheet("font-weight: bold; font-size: 11px; color: #ccc;")
 
-        result_fields = QHBoxLayout()
-        result_fields.setContentsMargins(0, 0, 0, 0)
+        result_row1 = QHBoxLayout()
+        result_row1.setContentsMargins(0, 0, 0, 0)
 
         self.result_class_edit = QLineEdit()
         self.result_class_edit.setReadOnly(True)
         self.result_class_edit.setPlaceholderText("—")
-        result_fields.addWidget(QLabel("Class:"))
-        result_fields.addWidget(self.result_class_edit)
+        result_row1.addWidget(QLabel("Class:"))
+        result_row1.addWidget(self.result_class_edit)
 
         self.result_elev_edit = QLineEdit()
         self.result_elev_edit.setReadOnly(True)
         self.result_elev_edit.setPlaceholderText("—")
-        result_fields.addWidget(QLabel("Elev:"))
-        result_fields.addWidget(self.result_elev_edit)
+        result_row1.addWidget(QLabel("Elev:"))
+        result_row1.addWidget(self.result_elev_edit)
 
         self.result_lat_edit = QLineEdit()
         self.result_lat_edit.setReadOnly(True)
         self.result_lat_edit.setPlaceholderText("—")
-        result_fields.addWidget(QLabel("Lat:"))
-        result_fields.addWidget(self.result_lat_edit)
+        result_row1.addWidget(QLabel("Lat:"))
+        result_row1.addWidget(self.result_lat_edit)
 
         self.result_lon_edit = QLineEdit()
         self.result_lon_edit.setReadOnly(True)
         self.result_lon_edit.setPlaceholderText("—")
-        result_fields.addWidget(QLabel("Lon:"))
-        result_fields.addWidget(self.result_lon_edit)
+        result_row1.addWidget(QLabel("Lon:"))
+        result_row1.addWidget(self.result_lon_edit)
+
+        result_row2 = QHBoxLayout()
+        result_row2.setContentsMargins(0, 0, 0, 0)
+
+        self.result_code_edit = QLineEdit()
+        self.result_code_edit.setReadOnly(True)
+        self.result_code_edit.setPlaceholderText("—")
+        result_row2.addWidget(QLabel("Code:"))
+        result_row2.addWidget(self.result_code_edit)
+
+        self.result_units_edit = QLineEdit()
+        self.result_units_edit.setReadOnly(True)
+        self.result_units_edit.setPlaceholderText("—")
+        result_row2.addWidget(QLabel("Units:"))
+        result_row2.addWidget(self.result_units_edit)
+
+        self.result_crs_edit = QLineEdit()
+        self.result_crs_edit.setReadOnly(True)
+        self.result_crs_edit.setPlaceholderText("—")
+        result_row2.addWidget(QLabel("CRS:"))
+        result_row2.addWidget(self.result_crs_edit)
+
+        self.result_type_edit = QLineEdit()
+        self.result_type_edit.setReadOnly(True)
+        self.result_type_edit.setPlaceholderText("—")
+        result_row2.addWidget(QLabel("Type:"))
+        result_row2.addWidget(self.result_type_edit)
 
         # --- Log ---
         log_header = QLabel("Log")
@@ -403,7 +429,8 @@ class MainTab(QWidget):
         right_layout.addLayout(viewer_row, stretch=1)
         right_layout.addLayout(btn_bar)
         right_layout.addWidget(result_header)
-        right_layout.addLayout(result_fields)
+        right_layout.addLayout(result_row1)
+        right_layout.addLayout(result_row2)
         right_layout.addWidget(log_header)
         right_layout.addWidget(self.results_text)
 
@@ -536,8 +563,9 @@ class MainTab(QWidget):
         form.addRow("Fine Zoom:", self.fine_zoom_spin)
 
         self.display_unit_combo = QComboBox()
-        self.display_unit_combo.addItem("Feet", True)
-        self.display_unit_combo.addItem("Meters", False)
+        self.display_unit_combo.addItem("Feet", ("ft", M2FT))
+        self.display_unit_combo.addItem("Feet (US Survey)", ("ftUS", M2FT_SURVEY))
+        self.display_unit_combo.addItem("Meters", ("m", 1.0))
         self.display_unit_combo.currentIndexChanged.connect(self._on_display_unit_changed)
         form.addRow("Display In:", self.display_unit_combo)
 
@@ -634,7 +662,8 @@ class MainTab(QWidget):
 
     def _on_display_unit_changed(self) -> None:
         if self.embedded_search.is_active:
-            QTimer.singleShot(0, lambda: self.embedded_search.set_display_feet(self.display_unit_combo.currentData()))
+            unit_label, scale = self.display_unit_combo.currentData()
+            QTimer.singleShot(0, lambda: self.embedded_search.set_display_unit(unit_label, scale))
 
     def _on_point_size_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
@@ -777,6 +806,7 @@ class MainTab(QWidget):
         """Search mode: data loaded, render into embedded viewer."""
         self.analyze_btn.setEnabled(True)
         self.analyze_btn.setText("Analyze")
+        self._last_crs_name = crs_info.source if crs_info else ""
 
         # Populate classification color dropdowns from detected classes
         import numpy as np
@@ -787,7 +817,7 @@ class MainTab(QWidget):
         self._populate_class_colors(unique_cls)
 
         options = self._get_options()
-        display_feet = self.display_unit_combo.currentData()
+        unit_label, unit_scale = self.display_unit_combo.currentData()
         class_cmaps = self._get_class_cmaps()
         visible_classes = {
             cls for cls, check in self._class_visible_checks.items()
@@ -796,7 +826,8 @@ class MainTab(QWidget):
         self.viewer_stack.setCurrentIndex(1)
         self.embedded_search.load(
             cloud, crs_info, options,
-            display_feet=display_feet,
+            display_unit=unit_label,
+            unit_scale=unit_scale,
             class_cmaps=class_cmaps,
             visible_classes=visible_classes,
             max_points=self.max_points_spin.value(),
@@ -857,9 +888,11 @@ class MainTab(QWidget):
         self.find_saddle_btn.setEnabled(50 <= n <= 5000)
 
     def _on_find_peak(self) -> None:
+        self._last_select_type = "Peak"
         self.embedded_search.find_peak()
 
     def _on_find_saddle(self) -> None:
+        self._last_select_type = "Saddle"
         self.embedded_search.find_saddle()
 
     def _on_zoom(self) -> None:
@@ -901,6 +934,8 @@ class MainTab(QWidget):
     # --- Search callbacks ---
 
     def _on_search_status(self, msg: str) -> None:
+        if msg.startswith("Selected:"):
+            self._last_select_type = "Manual"
         self._log(msg + "\n")
 
     def _on_search_result(self, pick: PickResult) -> None:
@@ -925,6 +960,10 @@ class MainTab(QWidget):
         self.result_elev_edit.clear()
         self.result_lat_edit.clear()
         self.result_lon_edit.clear()
+        self.result_code_edit.clear()
+        self.result_units_edit.clear()
+        self.result_crs_edit.clear()
+        self.result_type_edit.clear()
 
     def _display_result(self, result: object) -> None:
         if result is None:
@@ -940,13 +979,18 @@ class MainTab(QWidget):
         else:
             self.result_class_edit.setText("N/A")
 
-        display_feet = self.display_unit_combo.currentData()
-        if display_feet:
-            self.result_elev_edit.setText(f"{result.elevation_ft:,.2f}")
-        else:
-            self.result_elev_edit.setText(f"{result.elevation_m:,.2f}")
+        unit_label, unit_scale = self.display_unit_combo.currentData()
+        self.result_elev_edit.setText(f"{result.elevation_m * unit_scale:,.2f}")
         self.result_lat_edit.setText(f"{result.location_deg[0]:.6f}")
         self.result_lon_edit.setText(f"{result.location_deg[1]:.6f}")
+
+        # Second row
+        self.result_code_edit.setText(
+            str(result.classification) if result.classification is not None else "N/A"
+        )
+        self.result_units_edit.setText(unit_label)
+        self.result_crs_edit.setText(self._last_crs_name)
+        self.result_type_edit.setText(self._last_select_type or "Manual")
 
         # Log to terminal (always both units)
         self._log(

@@ -412,7 +412,7 @@ class EmbeddedSearch:
         self._m_per_deg_lon: float = 0.0
         self._active: bool = False
         self._max_points: int = DISPLAY_THRESHOLD
-        self._display_feet: bool = False
+        self._display_unit: str = "m"
         self._unit_scale: float = 1.0
         self._z_exaggeration: float = 1.0
         self._color_stretch: float = 1.0
@@ -449,7 +449,8 @@ class EmbeddedSearch:
         cloud: PointCloudData,
         crs_info: CrsInfo,
         options: QueryOptions,
-        display_feet: bool = False,
+        display_unit: str = "m",
+        unit_scale: float = 1.0,
         class_cmaps: dict[int, ColorScale] | None = None,
         visible_classes: set[int] | None = None,
         max_points: int = DISPLAY_THRESHOLD,
@@ -459,7 +460,8 @@ class EmbeddedSearch:
         :param cloud: Cleaned point cloud with lat/lon populated.
         :param crs_info: CRS info for display.
         :param options: Query options.
-        :param display_feet: If True, display in feet instead of meters.
+        :param display_unit: Unit label ("ft", "ftUS", "m").
+        :param unit_scale: Meters-to-display-unit factor.
         :param class_cmaps: Per-classification colormap overrides.
         :param visible_classes: Set of classification codes to display. None = all.
         :param max_points: Maximum points per classification to display.
@@ -484,8 +486,8 @@ class EmbeddedSearch:
         self._active = True
         self._max_points = max_points
         self._preserve_camera = False
-        self._display_feet = display_feet
-        self._unit_scale = M2FT if display_feet else 1.0
+        self._display_unit = display_unit
+        self._unit_scale = unit_scale
         self._class_cmaps = class_cmaps if class_cmaps is not None else {}
         self._visible_classes = visible_classes
         self._render()
@@ -570,8 +572,8 @@ class EmbeddedSearch:
                 int(cloud.classification[idx]), f"Class {cloud.classification[idx]}"
             )
         z_m = self._selected_z
-        if self._display_feet:
-            elev_display = f"{z_m * M2FT:.2f} ft"
+        if self._display_unit != "m":
+            elev_display = f"{z_m * self._unit_scale:.2f} {self._display_unit}"
         else:
             elev_display = f"{z_m:.2f} m"
         elev_log = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
@@ -672,9 +674,9 @@ class EmbeddedSearch:
         self._show_selection_status()
 
         # Emit detailed saddle info
-        if self._display_feet:
-            fit_elev = f"{saddle_z_m * M2FT:.2f} ft"
-            near_elev = f"{self._selected_z * M2FT:.2f} ft"
+        if self._display_unit != "m":
+            fit_elev = f"{saddle_z_m * self._unit_scale:.2f} {self._display_unit}"
+            near_elev = f"{self._selected_z * self._unit_scale:.2f} {self._display_unit}"
         else:
             fit_elev = f"{saddle_z_m:.2f} m"
             near_elev = f"{self._selected_z:.2f} m"
@@ -761,8 +763,8 @@ class EmbeddedSearch:
             cls_name = ASPRS_CLASSIFICATION_NAMES.get(cls_code, f"Class {cls_code}")
 
         z_m = self._selected_z
-        if self._display_feet:
-            elev_display = f"{z_m * M2FT:.2f} ft"
+        if self._display_unit != "m":
+            elev_display = f"{z_m * self._unit_scale:.2f} {self._display_unit}"
         else:
             elev_display = f"{z_m:.2f} m"
         _update_status(self.plotter, self._selected_lat, self._selected_lon, elev_display, cls_name)
@@ -841,7 +843,7 @@ class EmbeddedSearch:
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
 
-        if self._display_feet:
+        if self._display_unit != "m":
             elev_str = f"{result.z * M2FT:.1f} ft"
         else:
             elev_str = f"{result.z:.1f} m"
@@ -976,13 +978,14 @@ class EmbeddedSearch:
         if self._active and self._working_cloud is not None:
             self._render()
 
-    def set_display_feet(self, display_feet: bool) -> None:
+    def set_display_unit(self, display_unit: str, unit_scale: float) -> None:
         """Switch display unit and re-render.
 
-        :param display_feet: True for feet, False for meters.
+        :param display_unit: Unit label ("ft", "ftUS", "m").
+        :param unit_scale: Meters-to-display-unit factor.
         """
-        self._display_feet = display_feet
-        self._unit_scale = M2FT if display_feet else 1.0
+        self._display_unit = display_unit
+        self._unit_scale = unit_scale
         if self._active and self._working_cloud is not None:
             self._render()
 
@@ -996,7 +999,7 @@ class EmbeddedSearch:
         """
         wc = self._working_cloud
         s = self._unit_scale
-        unit = "ft" if self._display_feet else "m"
+        unit = self._display_unit
 
         # Center on surface classes (Ground + Snow/Ice) if available so
         # the view frames the terrain of interest, not the full tile.
@@ -1280,8 +1283,8 @@ class EmbeddedSearch:
             cls_code = int(cloud.classification[self._pick_idx])
             cls_name = ASPRS_CLASSIFICATION_NAMES.get(cls_code, f"Class {cls_code}")
 
-        if self._display_feet:
-            elev_display = f"{z_m * M2FT:.2f} ft"
+        if self._display_unit != "m":
+            elev_display = f"{z_m * self._unit_scale:.2f} {self._display_unit}"
         else:
             elev_display = f"{z_m:.2f} m"
         elev_log = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
