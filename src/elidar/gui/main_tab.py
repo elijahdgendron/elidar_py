@@ -509,7 +509,7 @@ class MainTab(QWidget):
 
         self.point_size_spin = QSpinBox()
         self.point_size_spin.setRange(1, 20)
-        self.point_size_spin.setValue(5)
+        self.point_size_spin.setValue(10)
         self.point_size_spin.valueChanged.connect(self._on_point_size_changed)
         form.addRow("Point Size:", self.point_size_spin)
 
@@ -544,7 +544,7 @@ class MainTab(QWidget):
         self._adv_placeholder = QLabel("Load data to see classifications")
         self._adv_placeholder.setStyleSheet("color: #888;")
         self.class_color_layout.addRow(self._adv_placeholder)
-        self.options_tabs.addTab(self._adv_widget, "Advanced")
+        self.options_tabs.addTab(self._adv_widget, "Classifications")
 
         self.class_color_group = QWidget()
         self.class_color_group.setVisible(False)
