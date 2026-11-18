@@ -193,8 +193,8 @@ def _show_plotter(
     m_per_deg_lat = 111_320.0
     m_per_deg_lon = 111_320.0 * np.cos(np.radians(center_lat))
 
-    plot_x = (cloud.lat - center_lat) * m_per_deg_lat
-    plot_y = (cloud.lon - center_lon) * m_per_deg_lon
+    plot_x = (cloud.lon - center_lon) * m_per_deg_lon
+    plot_y = (cloud.lat - center_lat) * m_per_deg_lat
     plot_z = cloud.z.astype(np.float64)
 
     points = np.column_stack([plot_x, plot_y, plot_z])
@@ -233,8 +233,8 @@ def _show_plotter(
 
     def on_pick(point: np.ndarray) -> None:
         state.picked_point = point
-        real_lat = point[0] / m_per_deg_lat + center_lat
-        real_lon = point[1] / m_per_deg_lon + center_lon
+        real_lon = point[0] / m_per_deg_lon + center_lon
+        real_lat = point[1] / m_per_deg_lat + center_lat
         z_m = point[2]
         elev_str = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
         _update_status(plotter, real_lat, real_lon, elev_str)
@@ -895,8 +895,8 @@ class EmbeddedSearch:
         self._marker_actors = []
 
         s = self._unit_scale
-        mx = (self._selected_lat - self._center_lat) * _M_PER_DEG_LAT * s
-        my = (self._selected_lon - self._center_lon) * self._m_per_deg_lon * s
+        mx = (self._selected_lon - self._center_lon) * self._m_per_deg_lon * s
+        my = (self._selected_lat - self._center_lat) * _M_PER_DEG_LAT * s
         mz = self._selected_z * s * self._z_exaggeration
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
@@ -961,8 +961,8 @@ class EmbeddedSearch:
     def _add_selection_marker(self, result: PickResult) -> None:
         """Add a bright marker and annotation at the selected point."""
         s = self._unit_scale
-        mx = (result.lat - self._center_lat) * _M_PER_DEG_LAT * s
-        my = (result.lon - self._center_lon) * self._m_per_deg_lon * s
+        mx = (result.lon - self._center_lon) * self._m_per_deg_lon * s
+        my = (result.lat - self._center_lat) * _M_PER_DEG_LAT * s
         mz = result.z * s * self._z_exaggeration
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
@@ -1206,8 +1206,8 @@ class EmbeddedSearch:
             )
             cloud = self._display_cloud
 
-            self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
-            self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
+            self._display_x = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
+            self._display_y = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
             self._base_plot_z = cloud.z.astype(np.float64) * s
             plot_z = self._base_plot_z * self._z_exaggeration
 
@@ -1294,8 +1294,8 @@ class EmbeddedSearch:
                 self._display_cloud = wc
 
             cloud = self._display_cloud
-            self._display_x = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
-            self._display_y = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
+            self._display_x = (cloud.lon - self._center_lon) * self._m_per_deg_lon * s
+            self._display_y = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT * s
             self._base_plot_z = cloud.z.astype(np.float64) * s
             plot_z = self._base_plot_z * self._z_exaggeration
 
@@ -1324,8 +1324,8 @@ class EmbeddedSearch:
         # Cyan Z-axis on dark backgrounds for visibility
         z_ax_color = "cyan" if self._font_color == "white" else None
         self.plotter.add_axes(
-            xlabel="N",
-            ylabel="E",
+            xlabel="E",
+            ylabel="N",
             zlabel="Up",
             line_width=2,
             color=self._font_color,
@@ -1410,8 +1410,8 @@ class EmbeddedSearch:
         )
 
         s = self._unit_scale
-        real_lat = point[0] / (_M_PER_DEG_LAT * s) + self._center_lat
-        real_lon = point[1] / (self._m_per_deg_lon * s) + self._center_lon
+        real_lon = point[0] / (self._m_per_deg_lon * s) + self._center_lon
+        real_lat = point[1] / (_M_PER_DEG_LAT * s) + self._center_lat
         z_m = point[2] / (s * self._z_exaggeration)
 
         # Persist selection for re-highlighting after zoom
