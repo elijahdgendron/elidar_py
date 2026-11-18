@@ -241,7 +241,7 @@ class MainTab(QWidget):
         wash.setStyleSheet("background: rgba(0, 0, 0, 120); border: none;")
         wash_layout = QVBoxLayout(wash)
         # Text with transparent grey box
-        overlay = QLabel("3D LiDAR Viewer\n\nAdd files and click Analyze\nto load point cloud data")
+        overlay = QLabel("3D LiDAR Viewer\n\nAdd files and click Load\nto load point cloud data")
         overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         overlay.setStyleSheet(
             "color: white; font-size: 16px; font-weight: bold; "
