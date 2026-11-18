@@ -433,6 +433,16 @@ class EmbeddedSearch:
     def is_subsampled(self) -> bool:
         return self._is_subsampled
 
+    @property
+    def visible_point_count(self) -> int:
+        """Number of visible points in the working cloud."""
+        wc = self._working_cloud
+        if wc is None:
+            return 0
+        if self._visible_classes is not None and wc.classification is not None:
+            return int(np.isin(wc.classification, list(self._visible_classes)).sum())
+        return wc.n_points
+
     def load(
         self,
         cloud: PointCloudData,
@@ -575,6 +585,145 @@ class EmbeddedSearch:
             f"Peak found: {cls_name}  {self._selected_lat:.6f}°N, "
             f"{self._selected_lon:.6f}°W  Elev: {elev_log}"
         )
+
+    def find_saddle(self) -> None:
+        """Fit a quadratic surface and select the saddle point."""
+        if not self._active or self._display_cloud is None:
+            return
+
+        cloud = self._display_cloud
+
+        # Get visible points in local meters (always work in meters)
+        visible_mask = None
+        if self._visible_classes is not None and cloud.classification is not None:
+            visible_mask = np.isin(cloud.classification, list(self._visible_classes))
+            if not np.any(visible_mask):
+                self._emit_status("No visible points for saddle fit")
+                return
+
+        # Local meter coordinates (unscaled by display unit)
+        x_m = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT
+        y_m = (cloud.lon - self._center_lon) * self._m_per_deg_lon
+        z_m = cloud.z.astype(np.float64)
+
+        if visible_mask is not None:
+            x_m = x_m[visible_mask]
+            y_m = y_m[visible_mask]
+            z_m = z_m[visible_mask]
+
+        if len(z_m) < 50:
+            self._emit_status("Too few points for saddle fit (need >= 50)")
+            return
+
+        # Fit z = ax² + bxy + cy² + dx + ey + f
+        A = np.column_stack([x_m**2, x_m * y_m, y_m**2, x_m, y_m, np.ones_like(x_m)])
+        coeffs, _, _, _ = np.linalg.lstsq(A, z_m, rcond=None)
+        a, b, c, d, e, f_coeff = coeffs
+
+        # Hessian: [[2a, b], [b, 2c]]
+        det_H = 4 * a * c - b ** 2
+        if det_H >= 0:
+            self._emit_status("No saddle found — surface is a bowl or dome here. Try a different area.")
+            return
+
+        # Critical point (gradient = 0)
+        H = np.array([[2 * a, b], [b, 2 * c]])
+        try:
+            critical = np.linalg.solve(H, np.array([-d, -e]))
+        except np.linalg.LinAlgError:
+            self._emit_status("Saddle fit failed — degenerate surface")
+            return
+
+        cx_m, cy_m = critical[0], critical[1]
+
+        # Check critical point is within data extent
+        margin = 0.1 * max(x_m.max() - x_m.min(), y_m.max() - y_m.min())
+        if (cx_m < x_m.min() - margin or cx_m > x_m.max() + margin or
+                cy_m < y_m.min() - margin or cy_m > y_m.max() + margin):
+            self._emit_status("Saddle point is outside the visible area. Try panning or zooming differently.")
+            return
+
+        # Saddle elevation from the fit
+        saddle_z_m = float(
+            a * cx_m**2 + b * cx_m * cy_m + c * cy_m**2 + d * cx_m + e * cy_m + f_coeff
+        )
+        saddle_lat = cx_m / _M_PER_DEG_LAT + self._center_lat
+        saddle_lon = cy_m / self._m_per_deg_lon + self._center_lon
+
+        # Find nearest LiDAR point to the saddle in the full display cloud
+        all_x_m = (cloud.lat - self._center_lat) * _M_PER_DEG_LAT
+        all_y_m = (cloud.lon - self._center_lon) * self._m_per_deg_lon
+        dist = (all_x_m - cx_m) ** 2 + (all_y_m - cy_m) ** 2
+        if visible_mask is not None:
+            dist = np.where(visible_mask, dist, np.inf)
+        nearest_idx = int(np.argmin(dist))
+
+        # Set as current selection
+        self._pick_idx = nearest_idx
+        self._selected_lat = float(cloud.lat[nearest_idx])
+        self._selected_lon = float(cloud.lon[nearest_idx])
+        self._selected_z = float(cloud.z[nearest_idx])
+
+        s = self._unit_scale
+        self._picked_point = np.array([
+            self._display_x[nearest_idx],
+            self._display_y[nearest_idx],
+            cloud.z[nearest_idx] * s * self._z_exaggeration,
+        ])
+
+        # Show the fitted surface as a transparent mesh
+        self._show_saddle_surface(x_m, y_m, coeffs)
+        self._show_selection_marker()
+        self._show_selection_status()
+
+        # Emit detailed saddle info
+        if self._display_feet:
+            fit_elev = f"{saddle_z_m * M2FT:.2f} ft"
+            near_elev = f"{self._selected_z * M2FT:.2f} ft"
+        else:
+            fit_elev = f"{saddle_z_m:.2f} m"
+            near_elev = f"{self._selected_z:.2f} m"
+
+        self._emit_status(
+            f"Saddle fit: {saddle_lat:.6f}°N, {saddle_lon:.6f}°W  "
+            f"Fit elev: {fit_elev}  |  "
+            f"Nearest point elev: {near_elev}"
+        )
+
+    def _show_saddle_surface(
+        self,
+        x_m: np.ndarray,
+        y_m: np.ndarray,
+        coeffs: np.ndarray,
+    ) -> None:
+        """Render the fitted quadratic surface as a transparent mesh."""
+        a, b, c, d, e, f_coeff = coeffs
+        s = self._unit_scale
+
+        # Create a grid over the data extent
+        n_grid = 40
+        xi = np.linspace(x_m.min(), x_m.max(), n_grid)
+        yi = np.linspace(y_m.min(), y_m.max(), n_grid)
+        xx, yy = np.meshgrid(xi, yi)
+        zz = a * xx**2 + b * xx * yy + c * yy**2 + d * xx + e * yy + f_coeff
+
+        # Convert to display coordinates
+        px = xx.ravel() * s
+        py = yy.ravel() * s
+        pz = zz.ravel() * s * self._z_exaggeration
+
+        grid = pv.StructuredGrid()
+        grid.points = np.column_stack([px, py, pz])
+        grid.dimensions = [n_grid, n_grid, 1]
+
+        self.plotter.add_mesh(
+            grid,
+            color="cyan",
+            opacity=0.3,
+            show_scalar_bar=False,
+            name="saddle_surface",
+        )
+        self.plotter.render()
 
     def _restore_selection(self) -> None:
         """Re-highlight the persisted selection after a re-render."""

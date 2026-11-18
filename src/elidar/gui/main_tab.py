@@ -382,6 +382,12 @@ class MainTab(QWidget):
 
         view_bar.addWidget(self.mode_label, stretch=1)
 
+        self.find_saddle_btn = QPushButton("Find Saddle")
+        self.find_saddle_btn.setToolTip("Fit quadratic surface to find saddle point (zoom in first)")
+        self.find_saddle_btn.setEnabled(False)
+        self.find_saddle_btn.clicked.connect(self._on_find_saddle)
+        view_bar.addWidget(self.find_saddle_btn)
+
         # Assemble right side
         right_layout.addLayout(view_bar)
         right_layout.addLayout(viewer_row, stretch=1)
@@ -826,8 +832,15 @@ class MainTab(QWidget):
                 "font-weight: bold; font-size: 13px; color: green;"
             )
 
+        # Enable saddle fit when zoomed in enough (50-5000 visible points)
+        n = self.embedded_search.visible_point_count
+        self.find_saddle_btn.setEnabled(50 <= n <= 5000)
+
     def _on_find_peak(self) -> None:
         self.embedded_search.find_peak()
+
+    def _on_find_saddle(self) -> None:
+        self.embedded_search.find_saddle()
 
     def _on_zoom(self) -> None:
         self.embedded_search.zoom()
@@ -843,6 +856,7 @@ class MainTab(QWidget):
     def _on_cancel(self) -> None:
         self.embedded_search.cancel()
         self._set_search_controls(False)
+        self.find_saddle_btn.setEnabled(False)
         self.mode_label.setText("")
         self.viewer_stack.setCurrentIndex(0)
         self._log("Search cancelled.\n")
