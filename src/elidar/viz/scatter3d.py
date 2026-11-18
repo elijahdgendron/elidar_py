@@ -447,6 +447,7 @@ class EmbeddedSearch:
         :param visible_classes: Set of classification codes to display. None = all.
         """
         self._working_cloud = cloud
+        self._original_cloud = cloud
         self._options = options
         self._crs_info = crs_info
         # Zoom radius in meters for circular (not elliptical) cropping.
@@ -499,8 +500,8 @@ class EmbeddedSearch:
         self._zoom_radius_m = max(lat_span_m, lon_span_m) / 2
 
         logger.info(
-            "Zoomed: radius=%.6f deg, %d points remaining",
-            self._zoom_radius,
+            "Zoomed: radius=%.1f m, %d points remaining",
+            self._zoom_radius_m,
             self._working_cloud.n_points,
         )
 
@@ -539,7 +540,30 @@ class EmbeddedSearch:
         )
         if self.on_result:
             self.on_result(result)
+
+        # Re-render the full original cloud with the selected point highlighted
+        self._working_cloud = self._original_cloud
+        self._render()
+        self._add_selection_marker(result)
+
         return result
+
+    def _add_selection_marker(self, result: PickResult) -> None:
+        """Add a bright marker at the selected point on the full view."""
+        s = self._unit_scale
+        mx = (result.lat - self._center_lat) * _M_PER_DEG_LAT * s
+        my = (result.lon - self._center_lon) * self._m_per_deg_lon * s
+        mz = result.z * s * self._z_exaggeration
+
+        marker = pv.PolyData(np.array([[mx, my, mz]]))
+        self.plotter.add_points(
+            marker,
+            color="red",
+            point_size=20,
+            render_points_as_spheres=True,
+            show_scalar_bar=False,
+        )
+        self.plotter.render()
 
     def cancel(self) -> None:
         """Clear state and blank the viewer."""
