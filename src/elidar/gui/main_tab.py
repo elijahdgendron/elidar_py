@@ -138,6 +138,19 @@ class _QueryWorker(QThread):
             self.error.emit(str(e))
 
 
+class _LogHandler(logging.Handler):
+    """Routes log records to a QTextEdit widget."""
+
+    def __init__(self, text_widget: QTextEdit) -> None:
+        super().__init__()
+        self._widget = text_widget
+        self.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = self.format(record)
+        self._widget.append(msg)
+
+
 class MainTab(QWidget):
     """Primary analysis tab with embedded 3D viewer."""
 
@@ -277,6 +290,11 @@ class MainTab(QWidget):
         self.results_text.setReadOnly(True)
         self.results_text.setMaximumHeight(120)
         self.results_text.setStyleSheet("font-family: monospace; font-size: 11px;")
+
+        # Route elidar.* log messages to the GUI log widget
+        gui_handler = _LogHandler(self.results_text)
+        gui_handler.setLevel(logging.INFO)
+        logging.getLogger("elidar").addHandler(gui_handler)
 
         # Exaggeration slider (vertical, right of viewer)
         exag_col = QVBoxLayout()
