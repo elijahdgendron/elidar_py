@@ -25,7 +25,7 @@ class ELiDARApp(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("ELiDAR - LiDAR Prominence Analysis")
+        self.setWindowTitle("ELiDAR - Point Cloud Peak/Saddle Analysis and Visualization for Peakbaggers")
         self.setMinimumSize(950, 700)
 
         self.settings = QSettings("ELiDAR", "ELiDAR")

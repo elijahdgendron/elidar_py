@@ -788,7 +788,7 @@ class MainTab(QWidget):
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 4, 0, 0)
 
-        self.analyze_btn = QPushButton("Analyze")
+        self.analyze_btn = QPushButton("Load")
         self.analyze_btn.setMinimumHeight(36)
         self.analyze_btn.setStyleSheet("font-weight: bold; font-size: 14px;")
         self.analyze_btn.clicked.connect(self._on_analyze)
@@ -886,7 +886,7 @@ class MainTab(QWidget):
     def _on_data_loaded(self, cloud: object, crs_info: object) -> None:
         """Search mode: data loaded, render into embedded viewer."""
         self.analyze_btn.setEnabled(True)
-        self.analyze_btn.setText("Analyze")
+        self.analyze_btn.setText("Load")
         self._last_crs_name = crs_info.source if crs_info else ""
 
         # Populate classification color dropdowns from detected classes
@@ -920,12 +920,12 @@ class MainTab(QWidget):
 
     def _on_query_finished(self, result: object) -> None:
         self.analyze_btn.setEnabled(True)
-        self.analyze_btn.setText("Analyze")
+        self.analyze_btn.setText("Load")
         self._display_result(result)
 
     def _on_query_error(self, msg: str) -> None:
         self.analyze_btn.setEnabled(True)
-        self.analyze_btn.setText("Analyze")
+        self.analyze_btn.setText("Load")
         self._log(f"ERROR: {msg}\n")
         logger.error("Query failed: %s", msg)
 
