@@ -865,11 +865,19 @@ class EmbeddedSearch:
         self._show_selection_marker()
         self._show_selection_status()
 
-        # Re-draw saddle analysis overlays if they exist
+        # Re-draw saddle analysis overlays if indices are still valid
+        n = cloud.n_points
         if self._path_indices is not None:
-            self._show_path(self._path_indices)
+            if all(i < n for i in self._path_indices):
+                self._show_path(self._path_indices)
+            else:
+                self._path_indices = None
         if self._peak_a_idx is not None and self._peak_b_idx is not None:
-            self._show_peak_markers(self._peak_a_idx, self._peak_b_idx)
+            if self._peak_a_idx < n and self._peak_b_idx < n:
+                self._show_peak_markers(self._peak_a_idx, self._peak_b_idx)
+            else:
+                self._peak_a_idx = None
+                self._peak_b_idx = None
 
     def _show_selection_status(self) -> None:
         """Update the yellow status text for the current selection."""
