@@ -33,6 +33,15 @@ logger = logging.getLogger(__name__)
 DISPLAY_THRESHOLD = 50_000
 
 
+def _always_on_top(actor: object) -> None:
+    """Disable depth testing so the actor renders on top of everything."""
+    mapper = actor.GetMapper()
+    if mapper is not None:
+        mapper.SetResolveCoincidentTopologyToPolygonOffset()
+        mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-1, -1)
+    actor.GetProperty().SetDepthWrite(False)
+
+
 @dataclass
 class PickResult:
     """Result from interactive point selection.
@@ -805,13 +814,14 @@ class EmbeddedSearch:
             my = self._display_y[idx]
             mz = cloud.z[idx] * s * self._z_exaggeration
             marker = pv.PolyData(np.array([[mx, my, mz]]))
-            self.plotter.add_points(
+            a = self.plotter.add_points(
                 marker,
                 color=self.peak_color,
                 point_size=12,
                 render_points_as_spheres=True,
                 show_scalar_bar=False,
             )
+            _always_on_top(a)
         self.plotter.render()
 
     def _show_path(self, indices: list[int]) -> None:
@@ -832,9 +842,7 @@ class EmbeddedSearch:
             show_scalar_bar=False,
             name="saddle_path",
         )
-        # Render on top of points by disabling depth testing
-        actor.GetProperty().SetLineWidth(5)
-        actor.mapper.SetResolveCoincidentTopologyToPolygonOffset()
+        _always_on_top(actor)
         self.plotter.render()
 
     def _restore_selection(self) -> None:
@@ -915,21 +923,25 @@ class EmbeddedSearch:
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
         # Outline adapts to background
-        self._marker_actors.append(self.plotter.add_points(
+        a1 = self.plotter.add_points(
             marker,
             color=self._font_color,
             point_size=30,
             render_points_as_spheres=False,
             show_scalar_bar=False,
-        ))
+        )
+        _always_on_top(a1)
+        self._marker_actors.append(a1)
         # Core sphere
-        self._marker_actors.append(self.plotter.add_points(
+        a2 = self.plotter.add_points(
             marker,
             color=self.marker_color,
             point_size=22,
             render_points_as_spheres=True,
             show_scalar_bar=False,
-        ))
+        )
+        _always_on_top(a2)
+        self._marker_actors.append(a2)
         self.plotter.render()
 
     def done(self) -> PickResult | None:
@@ -994,20 +1006,22 @@ class EmbeddedSearch:
         label = f" {cls_name}  {elev_str}" if cls_name else f" {elev_str}"
         marker["labels"] = [label]
 
-        self.plotter.add_points(
+        a1 = self.plotter.add_points(
             marker,
             color=self._font_color,
             point_size=30,
             render_points_as_spheres=False,
             show_scalar_bar=False,
         )
-        self.plotter.add_points(
+        _always_on_top(a1)
+        a2 = self.plotter.add_points(
             marker,
             color=self.marker_color,
             point_size=18,
             render_points_as_spheres=True,
             show_scalar_bar=False,
         )
+        _always_on_top(a2)
         self.plotter.add_point_labels(
             marker,
             "labels",
