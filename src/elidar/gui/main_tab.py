@@ -6,7 +6,7 @@ import logging
 import os
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QSettings, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, QSettings, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -138,17 +138,24 @@ class _QueryWorker(QThread):
             self.error.emit(str(e))
 
 
+class _LogSignalBridge(QObject):
+    """Thread-safe bridge: emits a signal so the append happens on the main thread."""
+
+    message = pyqtSignal(str)
+
+
 class _LogHandler(logging.Handler):
-    """Routes log records to a QTextEdit widget."""
+    """Routes log records to a QTextEdit widget via a thread-safe signal."""
 
     def __init__(self, text_widget: QTextEdit) -> None:
         super().__init__()
-        self._widget = text_widget
+        self._bridge = _LogSignalBridge()
+        self._bridge.message.connect(text_widget.append)
         self.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 
     def emit(self, record: logging.LogRecord) -> None:
         msg = self.format(record)
-        self._widget.append(msg)
+        self._bridge.message.emit(msg)
 
 
 class MainTab(QWidget):
