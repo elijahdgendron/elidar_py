@@ -303,7 +303,10 @@ class MainTab(QWidget):
         gui_handler.setLevel(logging.INFO)
         logging.getLogger("elidar").addHandler(gui_handler)
 
-        # Exaggeration slider (vertical, right of viewer)
+        # Vertical sliders to the right of the viewer
+        sliders = QHBoxLayout()
+
+        # Z exaggeration slider
         exag_col = QVBoxLayout()
         exag_label = QLabel("Z\nExag")
         exag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -323,11 +326,34 @@ class MainTab(QWidget):
         self.exag_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.exag_value_label.setStyleSheet("font-size: 10px;")
         exag_col.addWidget(self.exag_value_label)
+        sliders.addLayout(exag_col)
 
-        # Viewer row: stack + slider
+        # Color stretch slider
+        stretch_col = QVBoxLayout()
+        stretch_label = QLabel("Color\nFocus")
+        stretch_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        stretch_label.setStyleSheet("font-size: 10px;")
+        stretch_col.addWidget(stretch_label)
+
+        self.stretch_slider = QSlider(Qt.Orientation.Vertical)
+        self.stretch_slider.setRange(10, 50)
+        self.stretch_slider.setValue(10)
+        self.stretch_slider.setTickPosition(QSlider.TickPosition.TicksRight)
+        self.stretch_slider.setTickInterval(5)
+        self.stretch_slider.setFixedWidth(30)
+        self.stretch_slider.valueChanged.connect(self._on_stretch_changed)
+        stretch_col.addWidget(self.stretch_slider)
+
+        self.stretch_value_label = QLabel("1.0x")
+        self.stretch_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stretch_value_label.setStyleSheet("font-size: 10px;")
+        stretch_col.addWidget(self.stretch_value_label)
+        sliders.addLayout(stretch_col)
+
+        # Viewer row: stack + sliders
         viewer_row = QHBoxLayout()
         viewer_row.addWidget(self.viewer_stack, stretch=1)
-        viewer_row.addLayout(exag_col)
+        viewer_row.addLayout(sliders)
 
         # View preset buttons
         view_bar = QHBoxLayout()
@@ -805,6 +831,12 @@ class MainTab(QWidget):
         factor = value / 10.0
         self.exag_value_label.setText(f"{factor:.1f}x")
         self.embedded_search.set_z_exaggeration(factor)
+
+    def _on_stretch_changed(self, value: int) -> None:
+        stretch = value / 10.0
+        self.stretch_value_label.setText(f"{stretch:.1f}x")
+        if self.embedded_search.is_active:
+            QTimer.singleShot(0, lambda: self.embedded_search.set_color_stretch(stretch))
 
     # --- Search callbacks ---
 

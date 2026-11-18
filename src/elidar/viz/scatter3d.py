@@ -26,7 +26,7 @@ import pyvista as pv
 
 from elidar.core.crs import CrsInfo, make_transformer
 from elidar.core.types import ColorScale, DEFAULT_CMAP, DEFAULT_CLASS_CMAPS, M2FT, PointCloudData, QueryOptions, SURFACE_CLASSES
-from elidar.viz.colormaps import get_colormap
+from elidar.viz.colormaps import get_colormap, stretch_colormap
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +412,7 @@ class EmbeddedSearch:
         self._display_feet: bool = False
         self._unit_scale: float = 1.0
         self._z_exaggeration: float = 1.0
+        self._color_stretch: float = 1.0
         self._point_size: int = 5
         self._font_color: str = "black"
         self._base_plot_z: np.ndarray | None = None
@@ -639,6 +640,15 @@ class EmbeddedSearch:
         self.plotter.reset_camera()
         self.plotter.render()
 
+    def set_color_stretch(self, stretch: float) -> None:
+        """Update color stretch and re-render.
+
+        :param stretch: Values > 1 give more differentiation at high elevations.
+        """
+        self._color_stretch = stretch
+        if self._active and self._working_cloud is not None:
+            self._render()
+
     def set_class_visible(self, cls: int, visible: bool) -> None:
         """Toggle visibility of a classification's points.
 
@@ -796,6 +806,8 @@ class EmbeddedSearch:
 
                 cmap_enum = self._class_cmaps.get(cls, DEFAULT_CMAP)
                 cmap = get_colormap(cmap_enum)
+                if self._color_stretch != 1.0:
+                    cmap = stretch_colormap(cmap, self._color_stretch)
 
                 pts = np.column_stack([px, py, pz])
                 pd = pv.PolyData(pts)
@@ -864,6 +876,8 @@ class EmbeddedSearch:
             plot_z = self._base_plot_z * self._z_exaggeration
 
             cmap = get_colormap(self._options.colorscale)
+            if self._color_stretch != 1.0:
+                cmap = stretch_colormap(cmap, self._color_stretch)
             pts = np.column_stack([self._display_x, self._display_y, plot_z])
             pd = pv.PolyData(pts)
             pd["elevation"] = self._base_plot_z
@@ -962,7 +976,7 @@ class EmbeddedSearch:
         s = self._unit_scale
         real_lat = point[0] / (_M_PER_DEG_LAT * s) + self._center_lat
         real_lon = point[1] / (self._m_per_deg_lon * s) + self._center_lon
-        z_m = point[2] / s
+        z_m = point[2] / (s * self._z_exaggeration)
 
         # Classification name
         from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
