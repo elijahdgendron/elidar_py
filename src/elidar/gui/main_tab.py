@@ -425,11 +425,12 @@ class MainTab(QWidget):
         form.setContentsMargins(4, 4, 4, 4)
 
         self.zoom_spin = QDoubleSpinBox()
-        self.zoom_spin.setRange(0.1, 0.9)
+        self.zoom_spin.setRange(1.5, 10.0)
         self.zoom_spin.setDecimals(1)
-        self.zoom_spin.setSingleStep(0.1)
-        self.zoom_spin.setValue(0.5)
-        form.addRow("Zoom Scale:", self.zoom_spin)
+        self.zoom_spin.setSingleStep(0.5)
+        self.zoom_spin.setValue(2.0)
+        self.zoom_spin.setSuffix("x")
+        form.addRow("Zoom Factor:", self.zoom_spin)
 
         self.display_unit_combo = QComboBox()
         self.display_unit_combo.addItem("Feet", True)
@@ -601,7 +602,7 @@ class MainTab(QWidget):
             colorscale=ColorScale.TURBO,
             filter_ground=False,
             query_radius_deg=self.radius_spin.value(),
-            zoom_scale=self.zoom_spin.value(),
+            zoom_scale=1.0 / self.zoom_spin.value(),
             force_unit=self.unit_combo.currentData(),
             dem_path=self.dem_edit.text().strip() or None,
             center=self.guess_center_check.isChecked(),
