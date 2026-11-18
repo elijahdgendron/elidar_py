@@ -563,8 +563,8 @@ class MainTab(QWidget):
         form.addRow("Fine Zoom:", self.fine_zoom_spin)
 
         self.display_unit_combo = QComboBox()
-        self.display_unit_combo.addItem("Feet", ("ft", M2FT))
-        self.display_unit_combo.addItem("Feet (US Survey)", ("ftUS", M2FT_SURVEY))
+        self.display_unit_combo.addItem("Feet", ("ft (international)", M2FT))
+        self.display_unit_combo.addItem("Feet (US Survey)", ("ft (survey)", M2FT_SURVEY))
         self.display_unit_combo.addItem("Meters", ("m", 1.0))
         self.display_unit_combo.currentIndexChanged.connect(self._on_display_unit_changed)
         form.addRow("Display In:", self.display_unit_combo)

@@ -999,7 +999,8 @@ class EmbeddedSearch:
         """
         wc = self._working_cloud
         s = self._unit_scale
-        unit = self._display_unit
+        # Short label for colorbar; full label is in _display_unit for results
+        unit = "ft" if "ft" in self._display_unit else "m"
 
         # Center on surface classes (Ground + Snow/Ice) if available so
         # the view frames the terrain of interest, not the full tile.
