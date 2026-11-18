@@ -490,12 +490,17 @@ class EmbeddedSearch:
         self._visible_classes = visible_classes
         self._render()
 
-    def zoom(self) -> None:
-        """Zoom around the currently picked/selected point."""
+    def zoom(self, scale: float | None = None) -> None:
+        """Zoom around the currently picked/selected point.
+
+        :param scale: Radius multiplier (0-1). None uses options.zoom_scale.
+        """
         if not self._active or self._selected_lat is None:
             return
 
-        self._zoom_radius_m *= self._options.zoom_scale
+        if scale is None:
+            scale = self._options.zoom_scale
+        self._zoom_radius_m *= scale
         clat = self._selected_lat
         clon = self._selected_lon
         # Distance in meters so the crop is a true circle on the ground

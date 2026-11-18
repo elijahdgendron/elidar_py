@@ -241,7 +241,12 @@ class MainTab(QWidget):
         self.zoom_btn = QPushButton("Zoom (Z)")
         self.zoom_btn.clicked.connect(self._on_zoom)
         self.zoom_btn.setEnabled(False)
-        btn_bar.addWidget(self.zoom_btn)
+        btn_bar.addWidget(self.zoom_btn, stretch=2)
+
+        self.fine_zoom_btn = QPushButton("Fine (F)")
+        self.fine_zoom_btn.clicked.connect(self._on_fine_zoom)
+        self.fine_zoom_btn.setEnabled(False)
+        btn_bar.addWidget(self.fine_zoom_btn, stretch=1)
 
         self.done_btn = QPushButton("Done (D)")
         self.done_btn.clicked.connect(self._on_done)
@@ -406,6 +411,7 @@ class MainTab(QWidget):
 
         # Keyboard shortcuts on the plotter widget
         self.plotter.add_key_event("z", self._on_zoom)
+        self.plotter.add_key_event("f", self._on_fine_zoom)
         self.plotter.add_key_event("d", self._on_done)
         self.plotter.add_key_event("Return", self._on_done)
         self.plotter.add_key_event("Escape", self._on_cancel)
@@ -514,7 +520,15 @@ class MainTab(QWidget):
         self.zoom_spin.setSingleStep(0.5)
         self.zoom_spin.setValue(2.0)
         self.zoom_spin.setSuffix("x")
-        form.addRow("Zoom Factor:", self.zoom_spin)
+        form.addRow("Coarse Zoom:", self.zoom_spin)
+
+        self.fine_zoom_spin = QDoubleSpinBox()
+        self.fine_zoom_spin.setRange(1.1, 3.0)
+        self.fine_zoom_spin.setDecimals(1)
+        self.fine_zoom_spin.setSingleStep(0.1)
+        self.fine_zoom_spin.setValue(1.3)
+        self.fine_zoom_spin.setSuffix("x")
+        form.addRow("Fine Zoom:", self.fine_zoom_spin)
 
         self.display_unit_combo = QComboBox()
         self.display_unit_combo.addItem("Feet", True)
@@ -710,7 +724,7 @@ class MainTab(QWidget):
             colorscale=ColorScale.TURBO,
             filter_ground=False,
             query_radius_deg=self.radius_spin.value(),
-            zoom_scale=1.0 / self.zoom_spin.value(),
+            zoom_scale=1.0 / self.zoom_spin.value(),  # default for CLI; GUI passes directly
             force_unit=self.unit_combo.currentData(),
             dem_path=self.dem_edit.text().strip() or None,
             center=self.guess_center_check.isChecked(),
@@ -814,6 +828,7 @@ class MainTab(QWidget):
     def _set_search_controls(self, enabled: bool) -> None:
         self.find_peak_btn.setEnabled(enabled)
         self.zoom_btn.setEnabled(enabled)
+        self.fine_zoom_btn.setEnabled(enabled)
         self.done_btn.setEnabled(enabled)
         self.cancel_btn.setEnabled(enabled)
 
@@ -843,7 +858,13 @@ class MainTab(QWidget):
         self.embedded_search.find_saddle()
 
     def _on_zoom(self) -> None:
-        self.embedded_search.zoom()
+        scale = 1.0 / self.zoom_spin.value()
+        self.embedded_search.zoom(scale)
+        self._update_mode_label()
+
+    def _on_fine_zoom(self) -> None:
+        scale = 1.0 / self.fine_zoom_spin.value()
+        self.embedded_search.zoom(scale)
         self._update_mode_label()
 
     def _on_done(self) -> None:
