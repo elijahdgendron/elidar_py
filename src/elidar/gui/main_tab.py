@@ -96,6 +96,10 @@ class _LoadWorker(QThread):
                     std_ratio=self.options.filter_threshold,
                 )
 
+            if cloud.n_points == 0:
+                self.error.emit("No points remaining after cleaning")
+                return
+
             self.finished.emit(cloud, crs_info)
         except Exception as e:
             self.error.emit(str(e))
@@ -720,6 +724,13 @@ class MainTab(QWidget):
         self.analyze_btn.setEnabled(False)
         self.analyze_btn.setText("Loading...")
         self._log(f"Running {query_type.value} query...\n")
+
+        # Disconnect any stale worker signals
+        if self._worker is not None:
+            try:
+                self._worker.disconnect()
+            except (TypeError, RuntimeError):
+                pass
 
         if query_type == QueryType.SEARCH:
             self._worker = _LoadWorker(lat, lon, paths, options)

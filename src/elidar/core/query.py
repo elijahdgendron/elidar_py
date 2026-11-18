@@ -83,6 +83,10 @@ def query_lidar(
         )
         logger.info("After cleaning: %d points", cloud.n_points)
 
+    if cloud.n_points == 0:
+        logger.warning("No points remaining after cleaning")
+        return None
+
     if query_type == QueryType.PEAK:
         return _query_peak(cloud, display_crs)
     elif query_type == QueryType.POINT:
@@ -132,8 +136,6 @@ def _load_and_merge(
     all_z_m: list[np.ndarray] = []
     all_cls: list[np.ndarray] = []
     all_int: list[np.ndarray] = []
-    has_cls = True
-    has_int = True
     single_crs: CrsInfo | None = None
 
     for p in paths:
@@ -155,14 +157,15 @@ def _load_and_merge(
         all_lon.append(cloud.lon)
         all_z_m.append(z_m)
 
+        n = len(z_m)
         if cloud.classification is not None:
             all_cls.append(cloud.classification)
         else:
-            has_cls = False
+            all_cls.append(np.zeros(n, dtype=np.uint8))
         if cloud.intensity is not None:
             all_int.append(cloud.intensity)
         else:
-            has_int = False
+            all_int.append(np.zeros(n, dtype=np.uint16))
 
         # For single-file case, keep the original CRS for display
         if len(paths) == 1:
@@ -178,8 +181,8 @@ def _load_and_merge(
         z=z_m,
         lat=lat,
         lon=lon,
-        classification=np.concatenate(all_cls) if has_cls else None,
-        intensity=np.concatenate(all_int) if has_int else None,
+        classification=np.concatenate(all_cls),
+        intensity=np.concatenate(all_int),
     )
 
     # Z is always meters after merge; track original unit for axis labeling

@@ -609,6 +609,7 @@ class EmbeddedSearch:
     def cancel(self) -> None:
         """Clear state and blank the viewer."""
         self._active = False
+        self._original_cloud = None
         self._working_cloud = None
         self._display_cloud = None
         self._picked_point = None
@@ -625,7 +626,7 @@ class EmbeddedSearch:
 
         :param factor: Multiplier for the Z axis (1.0 = no exaggeration).
         """
-        self._z_exaggeration = factor
+        self._z_exaggeration = max(factor, 0.01)
         if self._base_plot_z is None:
             return
 
@@ -965,6 +966,8 @@ class EmbeddedSearch:
 
     def _on_pick(self, point: np.ndarray) -> None:
         """Callback when the user clicks a point in the embedded view."""
+        if self._display_cloud is None or self._display_cloud.n_points == 0:
+            return
         self._picked_point = point
 
         # Only match against visible classes
@@ -972,6 +975,8 @@ class EmbeddedSearch:
         cloud = self._display_cloud
         if self._visible_classes is not None and cloud.classification is not None:
             visible_mask = np.isin(cloud.classification, list(self._visible_classes))
+            if not np.any(visible_mask):
+                return
 
         self._pick_idx = _find_picked_index(
             cloud, point, self._display_x, self._display_y,
