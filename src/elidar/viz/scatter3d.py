@@ -34,12 +34,11 @@ DISPLAY_THRESHOLD = 50_000
 
 
 def _always_on_top(actor: object) -> None:
-    """Disable depth testing so the actor renders on top of everything."""
+    """Push actor toward the camera so it renders on top of coincident geometry."""
     mapper = actor.GetMapper()
     if mapper is not None:
         mapper.SetResolveCoincidentTopologyToPolygonOffset()
-        mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-1, -1)
-    actor.GetProperty().SetDepthWrite(False)
+        mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-2, -2)
 
 
 @dataclass
