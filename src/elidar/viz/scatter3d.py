@@ -1357,6 +1357,10 @@ class EmbeddedSearch:
             tolerance=0.025,
         )
 
+        # Terrain-style rotation: orbit around Z (Up) axis only,
+        # prevents flipping below the surface.
+        self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
+
         if self._preserve_camera:
             # Compare the user's current camera distance to what a re-fit
             # would produce. Keep the tighter of the two so we auto-zoom
