@@ -491,16 +491,13 @@ class EmbeddedSearch:
         self._render()
 
     def zoom(self) -> None:
-        """Zoom around the currently picked point."""
-        if not self._active or self._picked_point is None:
+        """Zoom around the currently picked/selected point."""
+        if not self._active or self._selected_lat is None:
             return
 
-        idx = self._pick_idx
-        cloud = self._display_cloud
-
         self._zoom_radius_m *= self._options.zoom_scale
-        clat = cloud.lat[idx]
-        clon = cloud.lon[idx]
+        clat = self._selected_lat
+        clon = self._selected_lon
         # Distance in meters so the crop is a true circle on the ground
         m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians(clat))
         dlat_m = (self._working_cloud.lat - clat) * _M_PER_DEG_LAT
@@ -513,14 +510,6 @@ class EmbeddedSearch:
             self._emit_status("Zoom resulted in empty cloud")
             self.cancel()
             return
-
-        # Recompute zoom radius from actual data extent in meters
-        wc = self._working_cloud
-        c_lat = float(np.mean(wc.lat))
-        mlon = _M_PER_DEG_LAT * np.cos(np.radians(c_lat))
-        lat_span_m = float(wc.lat.max() - wc.lat.min()) * _M_PER_DEG_LAT
-        lon_span_m = float(wc.lon.max() - wc.lon.min()) * mlon
-        self._zoom_radius_m = max(lat_span_m, lon_span_m) / 2
 
         logger.info(
             "Zoomed: radius=%.1f m, %d points remaining",
