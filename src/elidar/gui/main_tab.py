@@ -465,9 +465,9 @@ class MainTab(QWidget):
 
         toolbar.addWidget(util_group)
 
-        # State for manual peak selection
-        self._manual_peak_a: int | None = None
-        self._manual_peak_b: int | None = None
+        # State for manual peak selection (store lat/lon, not indices)
+        self._manual_peak_a: tuple[float, float] | None = None
+        self._manual_peak_b: tuple[float, float] | None = None
         self._peak_select_mode: bool = False
 
         # Assemble right side
@@ -1051,13 +1051,14 @@ class MainTab(QWidget):
 
     def _on_search_status(self, msg: str) -> None:
         if msg.startswith("Selected:") and self._peak_select_mode:
-            idx = self.embedded_search._pick_idx
+            es = self.embedded_search
+            latlon = (es._selected_lat, es._selected_lon)
             if self._manual_peak_a is None:
-                self._manual_peak_a = idx
+                self._manual_peak_a = latlon
                 self._log("Peak A set. Now click Peak B.\n")
                 return
             elif self._manual_peak_b is None:
-                self._manual_peak_b = idx
+                self._manual_peak_b = latlon
                 self._log("Peak B set. Finding saddle...\n")
                 self._on_find_saddle()
                 return

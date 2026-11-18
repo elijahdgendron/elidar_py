@@ -650,7 +650,11 @@ class EmbeddedSearch:
             f"{self._selected_lon:.6f}°W  Elev: {elev_log}"
         )
 
-    def find_saddle(self, peak_a_idx: int | None = None, peak_b_idx: int | None = None) -> None:
+    def find_saddle(
+        self,
+        peak_a: tuple[float, float] | None = None,
+        peak_b: tuple[float, float] | None = None,
+    ) -> None:
         """Find the key col using minimax pathfinding between two peaks.
 
         Uses Kruskal's Maximum Spanning Tree approach: builds a Delaunay
@@ -658,8 +662,8 @@ class EmbeddedSearch:
         merges components until the two peaks connect. The connecting
         edge's lower endpoint is the key col by definition.
 
-        :param peak_a_idx: Index of first peak in display cloud, or None for auto.
-        :param peak_b_idx: Index of second peak in display cloud, or None for auto.
+        :param peak_a: (lat, lon) of first peak, or None for auto.
+        :param peak_b: (lat, lon) of second peak, or None for auto.
         """
         from scipy.spatial import Delaunay
 
@@ -707,13 +711,14 @@ class EmbeddedSearch:
                     neighbors[int(simplex[j])].add(int(simplex[i]))
 
         # Determine peaks in the visible subset's local index space
-        if peak_a_idx is not None and peak_b_idx is not None:
-            a_map = np.where(vis_indices == peak_a_idx)[0]
-            b_map = np.where(vis_indices == peak_b_idx)[0]
-            if len(a_map) == 0 or len(b_map) == 0:
-                self._emit_status("Selected peaks are not visible points")
-                return
-            a_local, b_local = int(a_map[0]), int(b_map[0])
+        if peak_a is not None and peak_b is not None:
+            # Find nearest visible point to each (lat, lon)
+            lat_vis = cloud.lat[vis_indices]
+            lon_vis = cloud.lon[vis_indices]
+            da = (lat_vis - peak_a[0]) ** 2 + (lon_vis - peak_a[1]) ** 2
+            db = (lat_vis - peak_b[0]) ** 2 + (lon_vis - peak_b[1]) ** 2
+            a_local = int(np.argmin(da))
+            b_local = int(np.argmin(db))
         else:
             # Find local maxima: points higher than all Delaunay neighbors
             local_maxima = []
