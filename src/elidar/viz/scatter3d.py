@@ -46,7 +46,7 @@ def _z_bump(base_plot_z: np.ndarray | None) -> float:
     if base_plot_z is None or len(base_plot_z) == 0:
         return 1.0
     z_range = float(base_plot_z.max() - base_plot_z.min())
-    return max(z_range * 0.02, 0.1)
+    return max(z_range * 0.01, 0.1)
 
 
 @dataclass
