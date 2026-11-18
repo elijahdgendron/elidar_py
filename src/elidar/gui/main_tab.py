@@ -421,7 +421,7 @@ class MainTab(QWidget):
         sliders.addLayout(stretch_col)
 
         # Viewer row: stack (aspect-locked) + sliders
-        viewer_wrapper = _AspectRatioWidget(self.viewer_stack, ratio=4 / 3)
+        viewer_wrapper = _AspectRatioWidget(self.viewer_stack, ratio=16 / 9)
         viewer_row = QHBoxLayout()
         viewer_row.addWidget(viewer_wrapper, stretch=1)
         viewer_row.addLayout(sliders)
