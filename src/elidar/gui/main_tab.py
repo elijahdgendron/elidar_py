@@ -474,16 +474,6 @@ class MainTab(QWidget):
         self.file_list.setMaximumHeight(80)
         layout.addWidget(self.file_list)
 
-        dem_row = QHBoxLayout()
-        dem_row.addWidget(QLabel("DEM:"))
-        self.dem_edit = QLineEdit()
-        self.dem_edit.setPlaceholderText("Optional — only if LAZ has no CRS")
-        dem_row.addWidget(self.dem_edit)
-        self.dem_browse_btn = QPushButton("...")
-        self.dem_browse_btn.setMaximumWidth(30)
-        self.dem_browse_btn.clicked.connect(self._on_browse_dem)
-        dem_row.addWidget(self.dem_browse_btn)
-        layout.addLayout(dem_row)
 
         return group
 
@@ -732,15 +722,6 @@ class MainTab(QWidget):
     def _on_clear_files(self) -> None:
         self.file_list.clear()
 
-    def _on_browse_dem(self) -> None:
-        last_dir = self.settings.value("last_dir", os.path.expanduser("~"))
-        f, _ = QFileDialog.getOpenFileName(
-            self, "Select DEM File", str(last_dir),
-            "DEM Files (*.tif *.img);;All Files (*)",
-        )
-        if f:
-            self.dem_edit.setText(f)
-
     def _file_in_list(self, path: str) -> bool:
         for i in range(self.file_list.count()):
             if self.file_list.item(i).text() == path:
@@ -760,7 +741,7 @@ class MainTab(QWidget):
             query_radius_deg=self.radius_spin.value(),
             zoom_scale=1.0 / self.zoom_spin.value(),  # default for CLI; GUI passes directly
             force_unit=self.unit_combo.currentData(),
-            dem_path=self.dem_edit.text().strip() or None,
+            dem_path=None,
             center=self.guess_center_check.isChecked(),
         )
 
