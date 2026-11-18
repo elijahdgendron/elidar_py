@@ -675,9 +675,10 @@ class EmbeddedSearch:
         # Sort edges by weight descending (highest first)
         edges.sort(reverse=True)
 
-        # Union-Find: add edges until the two peaks are connected
+        # Union-Find with MST adjacency tracking
         parent = list(range(n_vis))
         uf_rank = [0] * n_vis
+        mst_adj: dict[int, list[int]] = {i: [] for i in range(n_vis)}
 
         def find(x: int) -> int:
             while parent[x] != x:
@@ -685,29 +686,55 @@ class EmbeddedSearch:
                 x = parent[x]
             return x
 
-        def union(x: int, y: int) -> None:
+        def union(x: int, y: int) -> bool:
             px, py = find(x), find(y)
             if px == py:
-                return
+                return False
             if uf_rank[px] < uf_rank[py]:
                 px, py = py, px
             parent[py] = px
             if uf_rank[px] == uf_rank[py]:
                 uf_rank[px] += 1
+            mst_adj[x].append(y)
+            mst_adj[y].append(x)
+            return True
 
-        saddle_local = None
         for w, ea, eb in edges:
             union(ea, eb)
             if find(a_local) == find(b_local):
-                saddle_local = ea if z_m[ea] < z_m[eb] else eb
                 break
 
-        if saddle_local is None:
+        if find(a_local) != find(b_local):
             self._emit_status("Could not find a connecting path between peaks")
             return
 
+        # BFS to find the path from peak A to peak B through the MST
+        from collections import deque
+        visited = {a_local}
+        queue = deque([(a_local, [a_local])])
+        path_local: list[int] = []
+        while queue:
+            node, path = queue.popleft()
+            if node == b_local:
+                path_local = path
+                break
+            for nb in mst_adj[node]:
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append((nb, path + [nb]))
+
+        if not path_local:
+            self._emit_status("Path tracing failed")
+            return
+
+        # The saddle is the lowest point on the path
+        path_z = z_m[path_local]
+        saddle_path_idx = int(np.argmin(path_z))
+        saddle_local = path_local[saddle_path_idx]
+
         # Map back to display cloud index
         saddle_idx = int(vis_indices[saddle_local])
+        path_display_indices = [int(vis_indices[i]) for i in path_local]
 
         # Set as current selection
         self._pick_idx = saddle_idx
@@ -724,9 +751,8 @@ class EmbeddedSearch:
 
         self._show_selection_marker()
         self._show_selection_status()
-
-        # Show peak markers in green
         self._show_peak_markers(int(vis_indices[a_local]), int(vis_indices[b_local]))
+        self._show_path(path_display_indices)
 
         # Emit result
         if self._display_unit != "m":
@@ -737,7 +763,8 @@ class EmbeddedSearch:
         self._emit_status(
             f"Key col found: {self._selected_lat:.6f}°N, {self._selected_lon:.6f}°W  "
             f"Elev: {elev} {self._display_unit}  "
-            f"(minimax path between {z_m[a_local]:.1f} m and {z_m[b_local]:.1f} m peaks)"
+            f"(minimax path between {z_m[a_local]:.1f} m and {z_m[b_local]:.1f} m peaks, "
+            f"{len(path_local)} points on path)"
         )
 
     def _show_peak_markers(self, idx_a: int, idx_b: int) -> None:
@@ -756,6 +783,26 @@ class EmbeddedSearch:
                 render_points_as_spheres=True,
                 show_scalar_bar=False,
             )
+        self.plotter.render()
+
+    def _show_path(self, indices: list[int]) -> None:
+        """Render the minimax path as a line through the given display cloud indices."""
+        if len(indices) < 2:
+            return
+        cloud = self._display_cloud
+        s = self._unit_scale
+        pts = np.array([
+            [self._display_x[i], self._display_y[i], cloud.z[i] * s * self._z_exaggeration]
+            for i in indices
+        ])
+        line = pv.Spline(pts, n_points=len(pts))
+        self.plotter.add_mesh(
+            line,
+            color="yellow",
+            line_width=3,
+            show_scalar_bar=False,
+            name="saddle_path",
+        )
         self.plotter.render()
 
     def _restore_selection(self) -> None:
@@ -821,10 +868,10 @@ class EmbeddedSearch:
         mz = self._selected_z * s * self._z_exaggeration
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
-        # White outline (flat point so it doesn't occlude the sphere)
+        # Outline adapts to background (black on white, white on black)
         self._marker_actors.append(self.plotter.add_points(
             marker,
-            color="white",
+            color=self._font_color,
             point_size=25,
             render_points_as_spheres=False,
             show_scalar_bar=False,
@@ -903,7 +950,7 @@ class EmbeddedSearch:
 
         self.plotter.add_points(
             marker,
-            color="white",
+            color=self._font_color,
             point_size=25,
             render_points_as_spheres=False,
             show_scalar_bar=False,
