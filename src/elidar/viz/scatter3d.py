@@ -442,9 +442,9 @@ class EmbeddedSearch:
         self._class_actors: dict[int, object] = {}
         self._visible_classes: set[int] | None = None
         self._marker_actors: list[object] = []
-        self._path_indices: list[int] | None = None
-        self._peak_a_idx: int | None = None
-        self._peak_b_idx: int | None = None
+        self._path_latlons: list[tuple[float, float]] | None = None
+        self._peak_a_latlon: tuple[float, float] | None = None
+        self._peak_b_latlon: tuple[float, float] | None = None
         self._saved_selection: tuple[float, float, float] | None = None
         # Configurable colors
         self.marker_color: str = "magenta"
@@ -510,9 +510,9 @@ class EmbeddedSearch:
         self._selected_lat = None
         self._selected_lon = None
         self._selected_z = None
-        self._path_indices = None
-        self._peak_a_idx = None
-        self._peak_b_idx = None
+        self._path_latlons = None
+        self._peak_a_latlon = None
+        self._peak_b_latlon = None
         self._active = True
         self._max_points = max_points
         self._preserve_camera = False
@@ -555,9 +555,9 @@ class EmbeddedSearch:
         )
 
         # Clear saddle overlays — indices are stale after zoom resamples
-        self._path_indices = None
-        self._peak_a_idx = None
-        self._peak_b_idx = None
+        self._path_latlons = None
+        self._peak_a_latlon = None
+        self._peak_b_latlon = None
 
         self._preserve_camera = True
         self._render()
@@ -573,9 +573,9 @@ class EmbeddedSearch:
         self._selected_lat = None
         self._selected_lon = None
         self._selected_z = None
-        self._path_indices = None
-        self._peak_a_idx = None
-        self._peak_b_idx = None
+        self._path_latlons = None
+        self._peak_a_latlon = None
+        self._peak_b_latlon = None
         # Remove named actors
         try:
             self.plotter.remove_actor("saddle_path")
@@ -850,11 +850,16 @@ class EmbeddedSearch:
 
         self._show_selection_marker()
         self._show_selection_status()
-        self._peak_a_idx = int(vis_indices[a_local])
-        self._peak_b_idx = int(vis_indices[b_local])
-        self._path_indices = path_display_indices
-        self._show_peak_markers(self._peak_a_idx, self._peak_b_idx)
-        self._show_path(self._path_indices)
+
+        # Store lat/lon for path and peaks (index-independent)
+        self._peak_a_latlon = (float(cloud.lat[vis_indices[a_local]]), float(cloud.lon[vis_indices[a_local]]))
+        self._peak_b_latlon = (float(cloud.lat[vis_indices[b_local]]), float(cloud.lon[vis_indices[b_local]]))
+        self._path_latlons = [
+            (float(cloud.lat[vis_indices[i]]), float(cloud.lon[vis_indices[i]]))
+            for i in path_local
+        ]
+        self._show_peak_markers_ll()
+        self._show_path_ll()
 
         # Emit result
         if self._display_unit != "m":
@@ -869,14 +874,23 @@ class EmbeddedSearch:
             f"{len(path_local)} points on path)"
         )
 
-    def _show_peak_markers(self, idx_a: int, idx_b: int) -> None:
-        """Show small green markers at the two peak reference points."""
+    def _latlon_to_display(self, lat: float, lon: float) -> tuple[float, float, float]:
+        """Convert lat/lon to display coordinates with Z from nearest point."""
         cloud = self._display_cloud
         s = self._unit_scale
-        for idx in (idx_a, idx_b):
-            mx = self._display_x[idx]
-            my = self._display_y[idx]
-            mz = cloud.z[idx] * s * self._z_exaggeration + _z_bump(self._base_plot_z)
+        dist = (cloud.lat - lat) ** 2 + (cloud.lon - lon) ** 2
+        idx = int(np.argmin(dist))
+        mx = self._display_x[idx]
+        my = self._display_y[idx]
+        mz = cloud.z[idx] * s * self._z_exaggeration + _z_bump(self._base_plot_z)
+        return mx, my, mz
+
+    def _show_peak_markers_ll(self) -> None:
+        """Show green markers at peak lat/lon positions."""
+        if self._peak_a_latlon is None or self._peak_b_latlon is None:
+            return
+        for latlon in (self._peak_a_latlon, self._peak_b_latlon):
+            mx, my, mz = self._latlon_to_display(*latlon)
             marker = pv.PolyData(np.array([[mx, my, mz]]))
             a = self.plotter.add_points(
                 marker,
@@ -888,17 +902,11 @@ class EmbeddedSearch:
             _always_on_top(a)
         self.plotter.render()
 
-    def _show_path(self, indices: list[int]) -> None:
-        """Render the minimax path as a line through the given display cloud indices."""
-        if len(indices) < 2:
+    def _show_path_ll(self) -> None:
+        """Render the minimax path from stored lat/lon positions."""
+        if self._path_latlons is None or len(self._path_latlons) < 2:
             return
-        cloud = self._display_cloud
-        s = self._unit_scale
-        bump = _z_bump(self._base_plot_z)
-        pts = np.array([
-            [self._display_x[i], self._display_y[i], cloud.z[i] * s * self._z_exaggeration + bump]
-            for i in indices
-        ])
+        pts = np.array([self._latlon_to_display(lat, lon) for lat, lon in self._path_latlons])
         line = pv.PolyData(pts, lines=np.hstack([
             np.full((len(pts) - 1, 1), 2, dtype=int),
             np.arange(len(pts) - 1).reshape(-1, 1),
@@ -942,19 +950,9 @@ class EmbeddedSearch:
         self._show_selection_marker()
         self._show_selection_status()
 
-        # Re-draw saddle analysis overlays if indices are still valid
-        n = cloud.n_points
-        if self._path_indices is not None:
-            if all(i < n for i in self._path_indices):
-                self._show_path(self._path_indices)
-            else:
-                self._path_indices = None
-        if self._peak_a_idx is not None and self._peak_b_idx is not None:
-            if self._peak_a_idx < n and self._peak_b_idx < n:
-                self._show_peak_markers(self._peak_a_idx, self._peak_b_idx)
-            else:
-                self._peak_a_idx = None
-                self._peak_b_idx = None
+        # Re-draw saddle analysis overlays from stored lat/lon
+        self._show_path_ll()
+        self._show_peak_markers_ll()
 
     def _show_selection_status(self) -> None:
         """Update the yellow status text for the current selection."""
@@ -1016,7 +1014,15 @@ class EmbeddedSearch:
             return None
 
         cloud = self._display_cloud
-        idx = self._pick_idx
+        # Re-lookup from lat/lon in case display cloud was rebuilt
+        if self._selected_lat is not None:
+            dist = (
+                (cloud.lat - self._selected_lat) ** 2
+                + (cloud.lon - self._selected_lon) ** 2
+            )
+            idx = int(np.argmin(dist))
+        else:
+            idx = self._pick_idx
         cls = int(cloud.classification[idx]) if cloud.classification is not None else None
         result = PickResult(
             z=float(cloud.z[idx]),
@@ -1097,9 +1103,9 @@ class EmbeddedSearch:
         self._selected_lat = None
         self._selected_lon = None
         self._selected_z = None
-        self._path_indices = None
-        self._peak_a_idx = None
-        self._peak_b_idx = None
+        self._path_latlons = None
+        self._peak_a_latlon = None
+        self._peak_b_latlon = None
         self._marker_actors = []
         self._polydata = None
         self._polydatas = []
