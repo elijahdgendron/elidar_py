@@ -238,6 +238,11 @@ class MainTab(QWidget):
 
         # Search control buttons
         btn_bar = QHBoxLayout()
+        self.find_peak_btn = QPushButton("Find Peak")
+        self.find_peak_btn.clicked.connect(self._on_find_peak)
+        self.find_peak_btn.setEnabled(False)
+        btn_bar.addWidget(self.find_peak_btn)
+
         self.zoom_btn = QPushButton("Zoom (Z)")
         self.zoom_btn.clicked.connect(self._on_zoom)
         self.zoom_btn.setEnabled(False)
@@ -801,6 +806,7 @@ class MainTab(QWidget):
     # --- Search controls ---
 
     def _set_search_controls(self, enabled: bool) -> None:
+        self.find_peak_btn.setEnabled(enabled)
         self.zoom_btn.setEnabled(enabled)
         self.done_btn.setEnabled(enabled)
         self.cancel_btn.setEnabled(enabled)
@@ -819,6 +825,9 @@ class MainTab(QWidget):
             self.mode_label.setStyleSheet(
                 "font-weight: bold; font-size: 13px; color: green;"
             )
+
+    def _on_find_peak(self) -> None:
+        self.embedded_search.find_peak()
 
     def _on_zoom(self) -> None:
         self.embedded_search.zoom()

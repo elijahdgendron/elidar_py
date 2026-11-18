@@ -400,6 +400,9 @@ class EmbeddedSearch:
         self._display_y: np.ndarray | None = None
         self._picked_point: np.ndarray | None = None
         self._pick_idx: int | None = None
+        self._selected_lat: float | None = None
+        self._selected_lon: float | None = None
+        self._selected_z: float | None = None
         self._zoom_radius: float = 0.0
         self._options: QueryOptions | None = None
         self._crs_info: CrsInfo | None = None
@@ -464,6 +467,9 @@ class EmbeddedSearch:
         self._zoom_radius_m = min(config_radius_m, data_radius_m)
         self._picked_point = None
         self._pick_idx = None
+        self._selected_lat = None
+        self._selected_lon = None
+        self._selected_z = None
         self._active = True
         self._max_points = max_points
         self._preserve_camera = False
@@ -511,10 +517,111 @@ class EmbeddedSearch:
             self._working_cloud.n_points,
         )
 
-        self._picked_point = None
-        self._pick_idx = None
         self._preserve_camera = True
         self._render()
+        self._restore_selection()
+
+    def find_peak(self) -> None:
+        """Select the highest visible point and highlight it."""
+        if not self._active or self._display_cloud is None:
+            return
+
+        cloud = self._display_cloud
+
+        # Build visible mask
+        visible_mask = None
+        if self._visible_classes is not None and cloud.classification is not None:
+            visible_mask = np.isin(cloud.classification, list(self._visible_classes))
+            if not np.any(visible_mask):
+                self._emit_status("No visible points to search")
+                return
+
+        z = cloud.z.copy()
+        if visible_mask is not None:
+            z[~visible_mask] = -np.inf
+        idx = int(np.argmax(z))
+
+        # Set as the current selection
+        self._pick_idx = idx
+        self._selected_lat = float(cloud.lat[idx])
+        self._selected_lon = float(cloud.lon[idx])
+        self._selected_z = float(cloud.z[idx])
+
+        # Build a fake display-space picked point for consistency
+        s = self._unit_scale
+        self._picked_point = np.array([
+            self._display_x[idx],
+            self._display_y[idx],
+            cloud.z[idx] * s * self._z_exaggeration,
+        ])
+
+        self._show_selection_marker()
+
+        # Emit status
+        from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
+        cls_name = ""
+        if cloud.classification is not None:
+            cls_name = ASPRS_CLASSIFICATION_NAMES.get(
+                int(cloud.classification[idx]), f"Class {cloud.classification[idx]}"
+            )
+        z_m = self._selected_z
+        if self._display_feet:
+            elev_display = f"{z_m * M2FT:.2f} ft"
+        else:
+            elev_display = f"{z_m:.2f} m"
+        elev_log = f"{z_m:.2f} m ({z_m * M2FT:.2f} ft)"
+        _update_status(self.plotter, self._selected_lat, self._selected_lon, elev_display, cls_name)
+        self._emit_status(
+            f"Peak found: {cls_name}  {self._selected_lat:.6f}°N, "
+            f"{self._selected_lon:.6f}°W  Elev: {elev_log}"
+        )
+
+    def _restore_selection(self) -> None:
+        """Re-highlight the persisted selection after a re-render."""
+        if self._selected_lat is None:
+            return
+
+        cloud = self._display_cloud
+        if cloud is None or cloud.n_points == 0:
+            return
+
+        # Find the closest point in the new display cloud
+        dist = (
+            (cloud.lat - self._selected_lat) ** 2
+            + (cloud.lon - self._selected_lon) ** 2
+            + (cloud.z - self._selected_z) ** 2
+        )
+        idx = int(np.argmin(dist))
+        self._pick_idx = idx
+
+        s = self._unit_scale
+        self._picked_point = np.array([
+            self._display_x[idx],
+            self._display_y[idx],
+            cloud.z[idx] * s * self._z_exaggeration,
+        ])
+
+        self._show_selection_marker()
+
+    def _show_selection_marker(self) -> None:
+        """Show a marker at the current _selected_lat/lon/z."""
+        if self._selected_lat is None:
+            return
+
+        s = self._unit_scale
+        mx = (self._selected_lat - self._center_lat) * _M_PER_DEG_LAT * s
+        my = (self._selected_lon - self._center_lon) * self._m_per_deg_lon * s
+        mz = self._selected_z * s * self._z_exaggeration
+
+        marker = pv.PolyData(np.array([[mx, my, mz]]))
+        self.plotter.add_points(
+            marker,
+            color="magenta",
+            point_size=10,
+            render_points_as_spheres=True,
+            show_scalar_bar=False,
+        )
+        self.plotter.render()
 
     def done(self) -> PickResult | None:
         """Accept the current selection.
@@ -987,6 +1094,11 @@ class EmbeddedSearch:
         real_lat = point[0] / (_M_PER_DEG_LAT * s) + self._center_lat
         real_lon = point[1] / (self._m_per_deg_lon * s) + self._center_lon
         z_m = point[2] / (s * self._z_exaggeration)
+
+        # Persist selection for re-highlighting after zoom
+        self._selected_lat = real_lat
+        self._selected_lon = real_lon
+        self._selected_z = z_m
 
         # Classification name
         from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
