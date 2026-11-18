@@ -29,7 +29,7 @@ class ELiDARApp(QMainWindow):
         self.setMinimumSize(950, 700)
 
         self.settings = QSettings("ELiDAR", "ELiDAR")
-        self._restore_geometry()
+        self.resize(950, 700)
 
         central = QWidget()
         self.setCentralWidget(central)
