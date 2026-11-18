@@ -561,7 +561,7 @@ class MainTab(QWidget):
 
         self.point_size_spin = QSpinBox()
         self.point_size_spin.setRange(1, 20)
-        self.point_size_spin.setValue(10)
+        self.point_size_spin.setValue(15)
         self.point_size_spin.valueChanged.connect(self._on_point_size_changed)
         form.addRow("Point Size:", self.point_size_spin)
 
