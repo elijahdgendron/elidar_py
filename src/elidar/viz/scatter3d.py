@@ -785,15 +785,15 @@ class EmbeddedSearch:
         mz = self._selected_z * s * self._z_exaggeration
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
-        # White outline for contrast
+        # White outline (flat point so it doesn't occlude the sphere)
         self._marker_actors.append(self.plotter.add_points(
             marker,
             color="white",
             point_size=25,
-            render_points_as_spheres=True,
+            render_points_as_spheres=False,
             show_scalar_bar=False,
         ))
-        # Magenta core
+        # Magenta core (sphere renders in front of the flat point)
         self._marker_actors.append(self.plotter.add_points(
             marker,
             color="magenta",
@@ -869,7 +869,7 @@ class EmbeddedSearch:
             marker,
             color="white",
             point_size=25,
-            render_points_as_spheres=True,
+            render_points_as_spheres=False,
             show_scalar_bar=False,
         )
         self.plotter.add_points(
