@@ -304,8 +304,26 @@ class MainTab(QWidget):
         viewer_row.addWidget(self.viewer_stack, stretch=1)
         viewer_row.addLayout(exag_col)
 
+        # View preset buttons
+        view_bar = QHBoxLayout()
+        view_bar.setContentsMargins(0, 0, 0, 0)
+
+        self.view_iso_btn = QPushButton("3D")
+        self.view_iso_btn.setMaximumWidth(40)
+        self.view_iso_btn.setToolTip("Isometric view")
+        self.view_iso_btn.clicked.connect(lambda: self._set_camera_view("iso"))
+        view_bar.addWidget(self.view_iso_btn)
+
+        self.view_top_btn = QPushButton("Top")
+        self.view_top_btn.setMaximumWidth(40)
+        self.view_top_btn.setToolTip("Top-down view")
+        self.view_top_btn.clicked.connect(lambda: self._set_camera_view("top"))
+        view_bar.addWidget(self.view_top_btn)
+
+        view_bar.addWidget(self.mode_label, stretch=1)
+
         # Assemble right side
-        right_layout.addWidget(self.mode_label)
+        right_layout.addLayout(view_bar)
         right_layout.addLayout(viewer_row, stretch=1)
         right_layout.addLayout(btn_bar)
         right_layout.addWidget(result_header)
@@ -540,6 +558,19 @@ class MainTab(QWidget):
     def _on_max_points_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
             QTimer.singleShot(0, lambda: self.embedded_search.set_max_points(value))
+
+    def _set_camera_view(self, view: str) -> None:
+        """Set camera to a preset view, keeping the current focal point."""
+        fp = self.plotter.camera.focal_point
+        if view == "top":
+            self.plotter.camera_position = "xy"
+            self.plotter.camera.focal_point = fp
+        elif view == "iso":
+            self.plotter.camera_position = "xz"
+            self.plotter.camera.focal_point = fp
+            self.plotter.camera.elevation = 25
+            self.plotter.camera.azimuth = -60
+        self.plotter.render()
 
     def _on_bg_changed(self) -> None:
         color = self.bg_combo.currentData()
