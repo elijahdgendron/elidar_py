@@ -408,6 +408,7 @@ class EmbeddedSearch:
         self._center_lon: float = 0.0
         self._m_per_deg_lon: float = 0.0
         self._active: bool = False
+        self._max_points: int = DISPLAY_THRESHOLD
         self._display_feet: bool = False
         self._unit_scale: float = 1.0
         self._z_exaggeration: float = 1.0
@@ -436,6 +437,7 @@ class EmbeddedSearch:
         display_feet: bool = False,
         class_cmaps: dict[int, ColorScale] | None = None,
         visible_classes: set[int] | None = None,
+        max_points: int = DISPLAY_THRESHOLD,
     ) -> None:
         """Load a point cloud and render it.
 
@@ -445,6 +447,7 @@ class EmbeddedSearch:
         :param display_feet: If True, display in feet instead of meters.
         :param class_cmaps: Per-classification colormap overrides.
         :param visible_classes: Set of classification codes to display. None = all.
+        :param max_points: Maximum points per classification to display.
         """
         self._working_cloud = cloud
         self._original_cloud = cloud
@@ -461,6 +464,7 @@ class EmbeddedSearch:
         self._picked_point = None
         self._pick_idx = None
         self._active = True
+        self._max_points = max_points
         self._display_feet = display_feet
         self._unit_scale = M2FT if display_feet else 1.0
         self._class_cmaps = class_cmaps if class_cmaps is not None else {}
@@ -588,6 +592,15 @@ class EmbeddedSearch:
             show_points=False,
         )
         self.plotter.render()
+
+    def set_max_points(self, max_points: int) -> None:
+        """Update the max points per class and re-render.
+
+        :param max_points: Maximum points per classification to display.
+        """
+        self._max_points = max_points
+        if self._active and self._working_cloud is not None:
+            self._render()
 
     def cancel(self) -> None:
         """Clear state and blank the viewer."""
@@ -727,8 +740,8 @@ class EmbeddedSearch:
             for cls in unique_classes:
                 mask = wc.classification == cls
                 cls_cloud = wc.subset(mask)
-                if cls_cloud.n_points > DISPLAY_THRESHOLD:
-                    cls_cloud = _subsample(cls_cloud, DISPLAY_THRESHOLD)
+                if cls_cloud.n_points > self._max_points:
+                    cls_cloud = _subsample(cls_cloud, self._max_points)
                     any_subsampled = True
                 class_clouds.append((cls, cls_cloud))
 
@@ -835,9 +848,9 @@ class EmbeddedSearch:
                 )
                 actor.SetVisibility(visible)
         else:
-            self._is_subsampled = wc.n_points > DISPLAY_THRESHOLD
+            self._is_subsampled = wc.n_points > self._max_points
             if self._is_subsampled:
-                self._display_cloud = _subsample(wc, DISPLAY_THRESHOLD)
+                self._display_cloud = _subsample(wc, self._max_points)
             else:
                 self._display_cloud = wc
 

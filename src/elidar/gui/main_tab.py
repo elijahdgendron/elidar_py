@@ -444,6 +444,13 @@ class MainTab(QWidget):
         self.point_size_spin.valueChanged.connect(self._on_point_size_changed)
         form.addRow("Point Size:", self.point_size_spin)
 
+        self.max_points_spin = QSpinBox()
+        self.max_points_spin.setRange(1000, 500000)
+        self.max_points_spin.setSingleStep(10000)
+        self.max_points_spin.setValue(50000)
+        self.max_points_spin.valueChanged.connect(self._on_max_points_changed)
+        form.addRow("Max Points:", self.max_points_spin)
+
         self.bg_combo = QComboBox()
         self.bg_combo.addItem("White", "white")
         self.bg_combo.addItem("Gray", "gray")
@@ -529,6 +536,10 @@ class MainTab(QWidget):
     def _on_point_size_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
             QTimer.singleShot(0, lambda: self.embedded_search.set_point_size(value))
+
+    def _on_max_points_changed(self, value: int) -> None:
+        if self.embedded_search.is_active:
+            QTimer.singleShot(0, lambda: self.embedded_search.set_max_points(value))
 
     def _on_bg_changed(self) -> None:
         color = self.bg_combo.currentData()
@@ -665,6 +676,7 @@ class MainTab(QWidget):
             display_feet=display_feet,
             class_cmaps=class_cmaps,
             visible_classes=visible_classes,
+            max_points=self.max_points_spin.value(),
         )
 
         self._set_search_controls(True)
