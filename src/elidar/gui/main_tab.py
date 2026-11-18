@@ -258,6 +258,12 @@ class MainTab(QWidget):
         self.done_btn.setEnabled(False)
         btn_bar.addWidget(self.done_btn)
 
+        self.reselect_btn = QPushButton("Reselect (R)")
+        self.reselect_btn.setToolTip("Restore last Find Peak / Auto Saddle selection")
+        self.reselect_btn.clicked.connect(self._on_reselect)
+        self.reselect_btn.setEnabled(False)
+        btn_bar.addWidget(self.reselect_btn)
+
         self.cancel_btn = QPushButton("Cancel (Esc)")
         self.cancel_btn.clicked.connect(self._on_cancel)
         self.cancel_btn.setEnabled(False)
@@ -478,6 +484,7 @@ class MainTab(QWidget):
         # Keyboard shortcuts on the plotter widget
         self.plotter.add_key_event("z", self._on_zoom)
         self.plotter.add_key_event("f", self._on_fine_zoom)
+        self.plotter.add_key_event("r", self._on_reselect)
         self.plotter.add_key_event("d", self._on_done)
         self.plotter.add_key_event("Return", self._on_done)
         self.plotter.add_key_event("Escape", self._on_cancel)
@@ -632,10 +639,41 @@ class MainTab(QWidget):
         self.class_color_layout.addRow(self._adv_placeholder)
         self.options_tabs.addTab(self._adv_widget, "Classifications")
 
+        # --- Colors tab ---
+        colors_widget = QWidget()
+        colors_form = QFormLayout(colors_widget)
+        colors_form.setContentsMargins(4, 4, 4, 4)
+
+        color_choices = [
+            "magenta", "cyan", "lime", "yellow", "red", "orange", "white", "pink",
+        ]
+
+        self.marker_color_combo = QComboBox()
+        for c in color_choices:
+            self.marker_color_combo.addItem(c.capitalize(), c)
+        self.marker_color_combo.setCurrentText("Magenta")
+        self.marker_color_combo.currentIndexChanged.connect(self._on_overlay_color_changed)
+        colors_form.addRow("Selection:", self.marker_color_combo)
+
+        self.peak_color_combo = QComboBox()
+        for c in color_choices:
+            self.peak_color_combo.addItem(c.capitalize(), c)
+        self.peak_color_combo.setCurrentText("Lime")
+        self.peak_color_combo.currentIndexChanged.connect(self._on_overlay_color_changed)
+        colors_form.addRow("Peak Markers:", self.peak_color_combo)
+
+        self.path_color_combo = QComboBox()
+        for c in color_choices:
+            self.path_color_combo.addItem(c.capitalize(), c)
+        self.path_color_combo.setCurrentText("Cyan")
+        self.path_color_combo.currentIndexChanged.connect(self._on_overlay_color_changed)
+        colors_form.addRow("Saddle Path:", self.path_color_combo)
+
+        self.options_tabs.addTab(colors_widget, "Colors")
+
         self.class_color_group = QWidget()
         self.class_color_group.setVisible(False)
 
-        # Keep color_combo reference for _get_options (default colorscale)
         self.color_combo = None
 
         return group
@@ -692,6 +730,13 @@ class MainTab(QWidget):
     def _on_point_size_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
             QTimer.singleShot(0, lambda: self.embedded_search.set_point_size(value))
+
+    def _on_overlay_color_changed(self) -> None:
+        self.embedded_search.marker_color = self.marker_color_combo.currentData()
+        self.embedded_search.peak_color = self.peak_color_combo.currentData()
+        self.embedded_search.path_color = self.path_color_combo.currentData()
+        if self.embedded_search.is_active:
+            QTimer.singleShot(0, lambda: self.embedded_search._restore_selection())
 
     def _on_max_points_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
@@ -881,6 +926,7 @@ class MainTab(QWidget):
         self.zoom_btn.setEnabled(enabled)
         self.fine_zoom_btn.setEnabled(enabled)
         self.done_btn.setEnabled(enabled)
+        self.reselect_btn.setEnabled(enabled)
         self.cancel_btn.setEnabled(enabled)
 
     def _update_mode_label(self) -> None:
@@ -910,6 +956,9 @@ class MainTab(QWidget):
         saddle_ok = not self.embedded_search.is_subsampled and n >= 10
         self.find_saddle_btn.setEnabled(saddle_ok)
         self.select_peaks_btn.setEnabled(saddle_ok)
+
+    def _on_reselect(self) -> None:
+        self.embedded_search.reselect()
 
     def _on_find_peak(self) -> None:
         self._last_select_type = "Peak"

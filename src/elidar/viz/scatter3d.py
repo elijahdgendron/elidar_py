@@ -427,6 +427,11 @@ class EmbeddedSearch:
         self._path_indices: list[int] | None = None
         self._peak_a_idx: int | None = None
         self._peak_b_idx: int | None = None
+        self._saved_selection: tuple[float, float, float] | None = None
+        # Configurable colors
+        self.marker_color: str = "magenta"
+        self.peak_color: str = "lime"
+        self.path_color: str = "cyan"
         self._polydata: pv.PolyData | None = None
 
     @property
@@ -534,6 +539,13 @@ class EmbeddedSearch:
         self._render()
         self._restore_selection()
 
+    def reselect(self) -> None:
+        """Restore the last Find Peak / Find Saddle selection."""
+        if self._saved_selection is None:
+            return
+        self._selected_lat, self._selected_lon, self._selected_z = self._saved_selection
+        self._restore_selection()
+
     def find_peak(self) -> None:
         """Select the highest visible point and highlight it."""
         if not self._active or self._display_cloud is None:
@@ -554,11 +566,12 @@ class EmbeddedSearch:
             z[~visible_mask] = -np.inf
         idx = int(np.argmax(z))
 
-        # Set as the current selection
+        # Set as the current selection and save for reselect
         self._pick_idx = idx
         self._selected_lat = float(cloud.lat[idx])
         self._selected_lon = float(cloud.lon[idx])
         self._selected_z = float(cloud.z[idx])
+        self._saved_selection = (self._selected_lat, self._selected_lon, self._selected_z)
 
         # Build a fake display-space picked point for consistency
         s = self._unit_scale
@@ -742,11 +755,12 @@ class EmbeddedSearch:
         saddle_idx = int(vis_indices[saddle_local])
         path_display_indices = [int(vis_indices[i]) for i in path_local]
 
-        # Set as current selection
+        # Set as current selection and save for reselect
         self._pick_idx = saddle_idx
         self._selected_lat = float(cloud.lat[saddle_idx])
         self._selected_lon = float(cloud.lon[saddle_idx])
         self._selected_z = float(cloud.z[saddle_idx])
+        self._saved_selection = (self._selected_lat, self._selected_lon, self._selected_z)
 
         s = self._unit_scale
         self._picked_point = np.array([
@@ -787,7 +801,7 @@ class EmbeddedSearch:
             marker = pv.PolyData(np.array([[mx, my, mz]]))
             self.plotter.add_points(
                 marker,
-                color="lime",
+                color=self.peak_color,
                 point_size=12,
                 render_points_as_spheres=True,
                 show_scalar_bar=False,
@@ -805,13 +819,16 @@ class EmbeddedSearch:
             for i in indices
         ])
         line = pv.Spline(pts, n_points=len(pts))
-        self.plotter.add_mesh(
+        actor = self.plotter.add_mesh(
             line,
-            color="yellow",
+            color=self.path_color,
             line_width=5,
             show_scalar_bar=False,
             name="saddle_path",
         )
+        # Render on top of points by disabling depth testing
+        actor.GetProperty().SetLineWidth(5)
+        actor.mapper.SetResolveCoincidentTopologyToPolygonOffset()
         self.plotter.render()
 
     def _restore_selection(self) -> None:
@@ -883,19 +900,19 @@ class EmbeddedSearch:
         mz = self._selected_z * s * self._z_exaggeration
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
-        # Outline adapts to background (black on white, white on black)
+        # Outline adapts to background
         self._marker_actors.append(self.plotter.add_points(
             marker,
             color=self._font_color,
-            point_size=25,
+            point_size=30,
             render_points_as_spheres=False,
             show_scalar_bar=False,
         ))
-        # Magenta core (sphere renders in front of the flat point)
+        # Core sphere
         self._marker_actors.append(self.plotter.add_points(
             marker,
-            color="magenta",
-            point_size=18,
+            color=self.marker_color,
+            point_size=22,
             render_points_as_spheres=True,
             show_scalar_bar=False,
         ))
@@ -966,13 +983,13 @@ class EmbeddedSearch:
         self.plotter.add_points(
             marker,
             color=self._font_color,
-            point_size=25,
+            point_size=30,
             render_points_as_spheres=False,
             show_scalar_bar=False,
         )
         self.plotter.add_points(
             marker,
-            color="magenta",
+            color=self.marker_color,
             point_size=18,
             render_points_as_spheres=True,
             show_scalar_bar=False,
