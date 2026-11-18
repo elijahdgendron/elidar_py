@@ -238,11 +238,6 @@ class MainTab(QWidget):
 
         # Search control buttons
         btn_bar = QHBoxLayout()
-        self.find_peak_btn = QPushButton("Find Peak")
-        self.find_peak_btn.clicked.connect(self._on_find_peak)
-        self.find_peak_btn.setEnabled(False)
-        btn_bar.addWidget(self.find_peak_btn)
-
         self.zoom_btn = QPushButton("Zoom (Z)")
         self.zoom_btn.clicked.connect(self._on_zoom)
         self.zoom_btn.setEnabled(False)
@@ -381,6 +376,11 @@ class MainTab(QWidget):
         view_bar.addWidget(self.view_top_btn)
 
         view_bar.addWidget(self.mode_label, stretch=1)
+
+        self.find_peak_btn = QPushButton("Find Peak")
+        self.find_peak_btn.setEnabled(False)
+        self.find_peak_btn.clicked.connect(self._on_find_peak)
+        view_bar.addWidget(self.find_peak_btn)
 
         self.find_saddle_btn = QPushButton("Find Saddle")
         self.find_saddle_btn.setToolTip("Fit quadratic surface to find saddle point (zoom in first)")
