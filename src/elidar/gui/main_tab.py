@@ -149,18 +149,23 @@ class _AspectRatioWidget(QWidget):
     def __init__(self, child: QWidget, ratio: float = 4 / 3) -> None:
         super().__init__()
         self._ratio = ratio
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(child)
-        sp = self.sizePolicy()
-        sp.setHeightForWidth(True)
-        self.setSizePolicy(sp)
+        self._child = child
+        child.setParent(self)
 
-    def heightForWidth(self, width: int) -> int:
-        return int(width / self._ratio)
-
-    def hasHeightForWidth(self) -> bool:
-        return True
+    def resizeEvent(self, event: object) -> None:
+        w = self.width()
+        h = self.height()
+        target_h = int(w / self._ratio)
+        if target_h > h:
+            # Height-limited: fit width to height
+            cw = int(h * self._ratio)
+            x = (w - cw) // 2
+            self._child.setGeometry(x, 0, cw, h)
+        else:
+            # Width-limited: fit height to width
+            y = (h - target_h) // 2
+            self._child.setGeometry(0, y, w, target_h)
+        super().resizeEvent(event)
 
 
 class _LogSignalBridge(QObject):
