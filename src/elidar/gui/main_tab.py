@@ -415,10 +415,9 @@ class MainTab(QWidget):
         stretch_col.addWidget(self.stretch_value_label)
         sliders.addLayout(stretch_col)
 
-        # Viewer row: stack (aspect-locked) + sliders
-        viewer_wrapper = _AspectRatioWidget(self.viewer_stack, ratio=4 / 3)
+        # Viewer row: stack + sliders
         viewer_row = QHBoxLayout()
-        viewer_row.addWidget(viewer_wrapper, stretch=1)
+        viewer_row.addWidget(self.viewer_stack, stretch=1)
         viewer_row.addLayout(sliders)
 
         # Toolbar above the plot: View group | mode label | Util group
