@@ -917,22 +917,9 @@ class EmbeddedSearch:
         )
 
         if self._preserve_camera:
-            # Keep current viewing angle, just re-fit to new data extent
-            cam = self.plotter.camera
-            old_up = cam.up
-            old_pos = cam.position
-            old_fp = cam.focal_point
-            # Compute the direction vector (normalized)
-            direction = np.array(old_pos) - np.array(old_fp)
-            direction = direction / (np.linalg.norm(direction) + 1e-12)
-
-            self.plotter.reset_camera()
-            # Restore the same viewing direction from the new focal point
-            new_fp = self.plotter.camera.focal_point
-            dist = np.linalg.norm(np.array(self.plotter.camera.position) - np.array(new_fp))
-            cam.focal_point = new_fp
-            cam.position = tuple(np.array(new_fp) + direction * dist)
-            cam.up = old_up
+            # Keep the exact camera state — the user's manual zoom/pan/rotate.
+            # Since zoom always crops to a smaller subset, the existing camera
+            # is guaranteed to contain the new data. No reset needed.
             self._preserve_camera = False
         else:
             # Default: frame on surface classes with isometric view
