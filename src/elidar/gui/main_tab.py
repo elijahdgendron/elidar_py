@@ -1044,7 +1044,8 @@ class MainTab(QWidget):
                 return
             elif self._manual_peak_b is None:
                 self._manual_peak_b = idx
-                self._log("Peak B set. Click Find Saddle.\n")
+                self._log("Peak B set. Finding saddle...\n")
+                self._on_find_saddle()
                 return
         elif msg.startswith("Selected:"):
             self._last_select_type = "Manual"
