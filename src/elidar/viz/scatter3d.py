@@ -41,6 +41,14 @@ def _always_on_top(actor: object) -> None:
         mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-2, -2)
 
 
+def _z_bump(base_plot_z: np.ndarray | None) -> float:
+    """Small Z offset to push overlay markers above terrain points."""
+    if base_plot_z is None or len(base_plot_z) == 0:
+        return 1.0
+    z_range = float(base_plot_z.max() - base_plot_z.min())
+    return max(z_range * 0.02, 0.1)
+
+
 @dataclass
 class PickResult:
     """Result from interactive point selection.
@@ -813,7 +821,7 @@ class EmbeddedSearch:
         for idx in (idx_a, idx_b):
             mx = self._display_x[idx]
             my = self._display_y[idx]
-            mz = cloud.z[idx] * s * self._z_exaggeration
+            mz = cloud.z[idx] * s * self._z_exaggeration + _z_bump(self._base_plot_z)
             marker = pv.PolyData(np.array([[mx, my, mz]]))
             a = self.plotter.add_points(
                 marker,
@@ -831,8 +839,9 @@ class EmbeddedSearch:
             return
         cloud = self._display_cloud
         s = self._unit_scale
+        bump = _z_bump(self._base_plot_z)
         pts = np.array([
-            [self._display_x[i], self._display_y[i], cloud.z[i] * s * self._z_exaggeration]
+            [self._display_x[i], self._display_y[i], cloud.z[i] * s * self._z_exaggeration + bump]
             for i in indices
         ])
         line = pv.Spline(pts, n_points=len(pts))
@@ -920,7 +929,7 @@ class EmbeddedSearch:
         s = self._unit_scale
         mx = (self._selected_lon - self._center_lon) * self._m_per_deg_lon * s
         my = (self._selected_lat - self._center_lat) * _M_PER_DEG_LAT * s
-        mz = self._selected_z * s * self._z_exaggeration
+        mz = self._selected_z * s * self._z_exaggeration + _z_bump(self._base_plot_z)
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
         # Outline adapts to background
@@ -990,7 +999,7 @@ class EmbeddedSearch:
         s = self._unit_scale
         mx = (result.lon - self._center_lon) * self._m_per_deg_lon * s
         my = (result.lat - self._center_lat) * _M_PER_DEG_LAT * s
-        mz = result.z * s * self._z_exaggeration
+        mz = result.z * s * self._z_exaggeration + _z_bump(self._base_plot_z)
 
         marker = pv.PolyData(np.array([[mx, my, mz]]))
 
