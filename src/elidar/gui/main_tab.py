@@ -974,7 +974,7 @@ class MainTab(QWidget):
 
         # Enable saddle when at full resolution (not subsampled) and enough points
         n = self.embedded_search.visible_point_count
-        saddle_ok = not self.embedded_search.is_subsampled and n >= 10
+        saddle_ok = n >= 10
         self.find_saddle_btn.setEnabled(saddle_ok)
         self.select_peaks_btn.setEnabled(saddle_ok)
 
