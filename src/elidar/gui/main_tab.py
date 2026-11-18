@@ -238,15 +238,20 @@ class MainTab(QWidget):
 
         # Search control buttons
         btn_bar = QHBoxLayout()
+        btn_bar.setSpacing(4)
+
+        # Zoom pair grouped together
+        zoom_group = QHBoxLayout()
+        zoom_group.setSpacing(0)
         self.zoom_btn = QPushButton("Zoom (Z)")
         self.zoom_btn.clicked.connect(self._on_zoom)
         self.zoom_btn.setEnabled(False)
-        btn_bar.addWidget(self.zoom_btn, stretch=2)
-
+        zoom_group.addWidget(self.zoom_btn, stretch=2)
         self.fine_zoom_btn = QPushButton("Fine (F)")
         self.fine_zoom_btn.clicked.connect(self._on_fine_zoom)
         self.fine_zoom_btn.setEnabled(False)
-        btn_bar.addWidget(self.fine_zoom_btn, stretch=1)
+        zoom_group.addWidget(self.fine_zoom_btn, stretch=1)
+        btn_bar.addLayout(zoom_group)
 
         self.done_btn = QPushButton("Done (D)")
         self.done_btn.clicked.connect(self._on_done)
