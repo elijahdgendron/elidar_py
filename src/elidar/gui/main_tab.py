@@ -880,9 +880,9 @@ class MainTab(QWidget):
                 "font-weight: bold; font-size: 13px; color: green;"
             )
 
-        # Enable saddle when zoomed in enough (50-5000 visible points)
+        # Enable saddle when at full resolution (not subsampled) and enough points
         n = self.embedded_search.visible_point_count
-        saddle_ok = 50 <= n <= 5000
+        saddle_ok = not self.embedded_search.is_subsampled and n >= 10
         self.find_saddle_btn.setEnabled(saddle_ok)
         self.select_peaks_btn.setEnabled(saddle_ok)
 
