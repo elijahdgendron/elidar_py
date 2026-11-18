@@ -67,7 +67,7 @@ def stretch_colormap(cmap: str | Colormap, stretch: float) -> Colormap:
     import numpy as np
 
     if isinstance(cmap, str):
-        cmap = plt.cm.get_cmap(cmap)
+        cmap = plt.colormaps[cmap]
 
     n = 256
     t = np.linspace(0, 1, n)
