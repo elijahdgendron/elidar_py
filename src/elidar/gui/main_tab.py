@@ -231,6 +231,7 @@ class MainTab(QWidget):
 
         # Page 1: pyvista plotter
         self.plotter = QtInteractor(self)
+        self.plotter.set_background("black")
         self.viewer_stack.addWidget(self.plotter)
 
         self.embedded_search = EmbeddedSearch(
@@ -589,9 +590,9 @@ class MainTab(QWidget):
         form.addRow("Max Points:", self.max_points_spin)
 
         self.bg_combo = QComboBox()
-        self.bg_combo.addItem("White", "white")
-        self.bg_combo.addItem("Gray", "gray")
         self.bg_combo.addItem("Black", "black")
+        self.bg_combo.addItem("Gray", "gray")
+        self.bg_combo.addItem("White", "white")
         self.bg_combo.currentIndexChanged.connect(self._on_bg_changed)
         form.addRow("Background:", self.bg_combo)
 

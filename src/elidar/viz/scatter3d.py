@@ -417,7 +417,7 @@ class EmbeddedSearch:
         self._z_exaggeration: float = 1.0
         self._color_stretch: float = 1.0
         self._point_size: int = 5
-        self._font_color: str = "black"
+        self._font_color: str = "white"
         self._base_plot_z: np.ndarray | None = None
         self._polydatas: list[pv.PolyData] = []
         self._class_cmaps: dict[int, ColorScale] = {}
@@ -1286,12 +1286,15 @@ class EmbeddedSearch:
             )
             self._class_actors[-1] = actor
 
+        # Cyan Z-axis on dark backgrounds for visibility
+        z_ax_color = "cyan" if self._font_color == "white" else None
         self.plotter.add_axes(
             xlabel="N",
             ylabel="E",
             zlabel="Up",
             line_width=2,
             color=self._font_color,
+            z_color=z_ax_color,
         )
 
         self.plotter.enable_point_picking(
