@@ -602,6 +602,26 @@ class EmbeddedSearch:
         ])
 
         self._show_selection_marker()
+        self._show_selection_status()
+
+    def _show_selection_status(self) -> None:
+        """Update the yellow status text for the current selection."""
+        if self._selected_lat is None or self._display_cloud is None:
+            return
+
+        from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
+        cloud = self._display_cloud
+        cls_name = ""
+        if cloud.classification is not None and self._pick_idx is not None:
+            cls_code = int(cloud.classification[self._pick_idx])
+            cls_name = ASPRS_CLASSIFICATION_NAMES.get(cls_code, f"Class {cls_code}")
+
+        z_m = self._selected_z
+        if self._display_feet:
+            elev_display = f"{z_m * M2FT:.2f} ft"
+        else:
+            elev_display = f"{z_m:.2f} m"
+        _update_status(self.plotter, self._selected_lat, self._selected_lon, elev_display, cls_name)
 
     def _show_selection_marker(self) -> None:
         """Show a marker at the current _selected_lat/lon/z."""
