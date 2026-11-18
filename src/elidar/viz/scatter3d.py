@@ -424,6 +424,9 @@ class EmbeddedSearch:
         self._class_actors: dict[int, object] = {}
         self._visible_classes: set[int] | None = None
         self._marker_actors: list[object] = []
+        self._path_indices: list[int] | None = None
+        self._peak_a_idx: int | None = None
+        self._peak_b_idx: int | None = None
         self._polydata: pv.PolyData | None = None
 
     @property
@@ -483,6 +486,9 @@ class EmbeddedSearch:
         self._selected_lat = None
         self._selected_lon = None
         self._selected_z = None
+        self._path_indices = None
+        self._peak_a_idx = None
+        self._peak_b_idx = None
         self._active = True
         self._max_points = max_points
         self._preserve_camera = False
@@ -751,8 +757,11 @@ class EmbeddedSearch:
 
         self._show_selection_marker()
         self._show_selection_status()
-        self._show_peak_markers(int(vis_indices[a_local]), int(vis_indices[b_local]))
-        self._show_path(path_display_indices)
+        self._peak_a_idx = int(vis_indices[a_local])
+        self._peak_b_idx = int(vis_indices[b_local])
+        self._path_indices = path_display_indices
+        self._show_peak_markers(self._peak_a_idx, self._peak_b_idx)
+        self._show_path(self._path_indices)
 
         # Emit result
         if self._display_unit != "m":
@@ -806,7 +815,7 @@ class EmbeddedSearch:
         self.plotter.render()
 
     def _restore_selection(self) -> None:
-        """Re-highlight the persisted selection after a re-render."""
+        """Re-highlight the persisted selection and saddle overlays after a re-render."""
         if self._selected_lat is None:
             return
 
@@ -832,6 +841,12 @@ class EmbeddedSearch:
 
         self._show_selection_marker()
         self._show_selection_status()
+
+        # Re-draw saddle analysis overlays if they exist
+        if self._path_indices is not None:
+            self._show_path(self._path_indices)
+        if self._peak_a_idx is not None and self._peak_b_idx is not None:
+            self._show_peak_markers(self._peak_a_idx, self._peak_b_idx)
 
     def _show_selection_status(self) -> None:
         """Update the yellow status text for the current selection."""
@@ -995,6 +1010,9 @@ class EmbeddedSearch:
         self._selected_lat = None
         self._selected_lon = None
         self._selected_z = None
+        self._path_indices = None
+        self._peak_a_idx = None
+        self._peak_b_idx = None
         self._marker_actors = []
         self._polydata = None
         self._polydatas = []
