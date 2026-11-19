@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, Qt, QSettings, QThread, QTimer, pyqtSignal
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -199,6 +201,7 @@ class MainTab(QWidget):
         self._last_crs_name: str = ""
         self._last_select_type: str = ""
         self._saved_select_type: str = ""
+        self._last_result_string: str = ""
         self._tools_tab = None
 
         layout = QHBoxLayout(self)
@@ -224,8 +227,10 @@ class MainTab(QWidget):
         self.viewer_stack = QStackedWidget()
         self.viewer_stack.setMinimumHeight(300)
 
-        # Page 0: placeholder with background image
-        bg_path = Path(__file__).parent / "resources" / "background.png"
+        # Page 0: placeholder with background image (randomly chosen)
+        self._bg_dir = Path(__file__).parent / "resources"
+        bg_files = sorted(self._bg_dir.glob("background_*.png"))
+        bg_path = random.choice(bg_files) if bg_files else self._bg_dir / "background_1.png"
         placeholder = QFrame()
         placeholder.setObjectName("placeholder")
         placeholder.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
@@ -241,7 +246,7 @@ class MainTab(QWidget):
         wash.setStyleSheet("background: rgba(0, 0, 0, 120); border: none;")
         wash_layout = QVBoxLayout(wash)
         # Text with transparent grey box
-        overlay = QLabel("3D LiDAR Viewer\n\nAdd files and click Load\nto load point cloud data")
+        overlay = QLabel("3D LiDAR Viewer\n\nAdd files and click Load\nto begin analysis")
         overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         overlay.setStyleSheet(
             "color: white; font-size: 16px; font-weight: bold; "
@@ -253,6 +258,7 @@ class MainTab(QWidget):
         wash_layout.addStretch()
         ph_layout.setContentsMargins(0, 0, 0, 0)
         ph_layout.addWidget(wash)
+        self._placeholder = placeholder
         self.viewer_stack.addWidget(placeholder)
 
         # Page 1: pyvista plotter
@@ -286,7 +292,7 @@ class MainTab(QWidget):
         btn_bar.addWidget(self.done_btn)
 
         self.reselect_btn = QPushButton("Reselect (R)")
-        self.reselect_btn.setToolTip("Restore last Find Peak / Auto Saddle selection")
+        self.reselect_btn.setToolTip("Restore last Auto Peak / Auto Saddle selection")
         self.reselect_btn.clicked.connect(self._on_reselect)
         self.reselect_btn.setEnabled(False)
         btn_bar.addWidget(self.reselect_btn)
@@ -300,7 +306,6 @@ class MainTab(QWidget):
         self.screenshot_btn.clicked.connect(self._on_screenshot)
         btn_bar.addWidget(self.screenshot_btn)
 
-
         # --- Result fields ---
         result_header = QLabel("Result")
         result_header.setStyleSheet("font-weight: bold; font-size: 11px; color: #ccc;")
@@ -308,17 +313,17 @@ class MainTab(QWidget):
         result_row1 = QHBoxLayout()
         result_row1.setContentsMargins(0, 0, 0, 0)
 
-        self.result_class_edit = QLineEdit()
-        self.result_class_edit.setReadOnly(True)
-        self.result_class_edit.setPlaceholderText("—")
-        result_row1.addWidget(QLabel("Class:"))
-        result_row1.addWidget(self.result_class_edit)
-
         self.result_elev_edit = QLineEdit()
         self.result_elev_edit.setReadOnly(True)
         self.result_elev_edit.setPlaceholderText("—")
         result_row1.addWidget(QLabel("Elev:"))
         result_row1.addWidget(self.result_elev_edit)
+
+        self.result_units_edit = QLineEdit()
+        self.result_units_edit.setReadOnly(True)
+        self.result_units_edit.setPlaceholderText("—")
+        result_row1.addWidget(QLabel("Unit:"))
+        result_row1.addWidget(self.result_units_edit)
 
         self.result_lat_edit = QLineEdit()
         self.result_lat_edit.setReadOnly(True)
@@ -335,17 +340,11 @@ class MainTab(QWidget):
         result_row2 = QHBoxLayout()
         result_row2.setContentsMargins(0, 0, 0, 0)
 
-        self.result_code_edit = QLineEdit()
-        self.result_code_edit.setReadOnly(True)
-        self.result_code_edit.setPlaceholderText("—")
-        result_row2.addWidget(QLabel("Code:"))
-        result_row2.addWidget(self.result_code_edit)
-
-        self.result_units_edit = QLineEdit()
-        self.result_units_edit.setReadOnly(True)
-        self.result_units_edit.setPlaceholderText("—")
-        result_row2.addWidget(QLabel("Units:"))
-        result_row2.addWidget(self.result_units_edit)
+        self.result_class_edit = QLineEdit()
+        self.result_class_edit.setReadOnly(True)
+        self.result_class_edit.setPlaceholderText("—")
+        result_row2.addWidget(QLabel("Class:"))
+        result_row2.addWidget(self.result_class_edit)
 
         self.result_crs_edit = QLineEdit()
         self.result_crs_edit.setReadOnly(True)
@@ -358,6 +357,11 @@ class MainTab(QWidget):
         self.result_type_edit.setPlaceholderText("—")
         result_row2.addWidget(QLabel("Type:"))
         result_row2.addWidget(self.result_type_edit)
+
+        self.save_to_notes_btn = QPushButton("Save to Notes")
+        self.save_to_notes_btn.setEnabled(False)
+        self.save_to_notes_btn.clicked.connect(self._on_save_to_notes)
+        result_row2.addWidget(self.save_to_notes_btn)
 
         # --- Log ---
         log_header = QLabel("Log")
@@ -456,38 +460,53 @@ class MainTab(QWidget):
         view_lay.addWidget(self.clear_btn)
 
         toolbar.addWidget(view_group)
-        toolbar.addStretch(1)
 
-        # Util group
+        # Util group — 2 rows x 3 columns
         util_group = QGroupBox("Util")
         util_group.setStyleSheet(
             "QGroupBox { padding-top: 14px; border: 1px solid #666; border-radius: 3px; }"
             "QGroupBox::title { subcontrol-origin: margin; padding: 0 4px; }"
         )
-        util_lay = QHBoxLayout(util_group)
-        util_lay.setContentsMargins(4, 2, 4, 2)
+        util_grid = QGridLayout(util_group)
+        util_grid.setContentsMargins(4, 2, 4, 2)
+        util_grid.setSpacing(4)
 
-        self.find_peak_btn = QPushButton("Find Peak")
+        self.find_peak_btn = QPushButton("Auto Peak")
         self.find_peak_btn.setEnabled(False)
         self.find_peak_btn.clicked.connect(self._on_find_peak)
-        util_lay.addWidget(self.find_peak_btn)
+        util_grid.addWidget(self.find_peak_btn, 0, 0)
 
         self.find_saddle_btn = QPushButton("Auto Saddle")
-        self.find_saddle_btn.setToolTip(
-            "Find key col via minimax path (auto-detects peaks)"
-        )
+        self.find_saddle_btn.setToolTip("Find key col via minimax path (auto-detects peaks)")
         self.find_saddle_btn.setEnabled(False)
         self.find_saddle_btn.clicked.connect(self._on_find_saddle)
-        util_lay.addWidget(self.find_saddle_btn)
+        util_grid.addWidget(self.find_saddle_btn, 0, 1)
 
         self.select_peaks_btn = QPushButton("Manual Saddle")
-        self.select_peaks_btn.setToolTip(
-            "Click two points as peak references, then click again to find saddle"
-        )
+        self.select_peaks_btn.setToolTip("Click two points as peak references, then find saddle")
         self.select_peaks_btn.setCheckable(True)
         self.select_peaks_btn.setEnabled(False)
         self.select_peaks_btn.toggled.connect(self._on_select_peaks_toggled)
-        util_lay.addWidget(self.select_peaks_btn)
+        util_grid.addWidget(self.select_peaks_btn, 0, 2)
+
+        self.measure_btn = QPushButton("Measure")
+        self.measure_btn.setToolTip("Click two points to measure horizontal and vertical distance")
+        self.measure_btn.setCheckable(True)
+        self.measure_btn.setEnabled(False)
+        self.measure_btn.toggled.connect(self._on_measure_toggled)
+        util_grid.addWidget(self.measure_btn, 1, 0)
+
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.setToolTip("Undo the last overlay operation")
+        self.undo_btn.setEnabled(False)
+        self.undo_btn.clicked.connect(self._on_undo)
+        util_grid.addWidget(self.undo_btn, 1, 1)
+
+        self.redo_btn = QPushButton("Redo")
+        self.redo_btn.setToolTip("Redo the last undone operation")
+        self.redo_btn.setEnabled(False)
+        self.redo_btn.clicked.connect(self._on_redo)
+        util_grid.addWidget(self.redo_btn, 1, 2)
 
         toolbar.addWidget(util_group)
 
@@ -495,6 +514,11 @@ class MainTab(QWidget):
         self._manual_peak_a: tuple[float, float] | None = None
         self._manual_peak_b: tuple[float, float] | None = None
         self._peak_select_mode: bool = False
+
+        # State for distance measurement (store lat/lon/z)
+        self._measure_a: tuple[float, float, float] | None = None
+        self._measure_b: tuple[float, float, float] | None = None
+        self._measure_mode: bool = False
 
         # Assemble right side
         right_layout.addLayout(toolbar)
@@ -525,6 +549,8 @@ class MainTab(QWidget):
     def set_tools_tab(self, tools_tab: object) -> None:
         """Set the tools tab reference for forwarding results."""
         self._tools_tab = tools_tab
+        unit_label, scale = self.display_unit_combo.currentData()
+        tools_tab.set_display_unit(unit_label, scale)  # type: ignore[union-attr]
 
     def _build_file_group(self) -> QGroupBox:
         group = QGroupBox("Data Files")
@@ -635,7 +661,7 @@ class MainTab(QWidget):
 
         self.point_size_spin = QSpinBox()
         self.point_size_spin.setRange(1, 20)
-        self.point_size_spin.setValue(15)
+        self.point_size_spin.setValue(10)
         self.point_size_spin.valueChanged.connect(self._on_point_size_changed)
         form.addRow("Point Size:", self.point_size_spin)
 
@@ -709,6 +735,13 @@ class MainTab(QWidget):
         self.path_color_combo.currentIndexChanged.connect(self._on_overlay_color_changed)
         colors_form.addRow("Saddle Path:", self.path_color_combo)
 
+        self.dist_color_combo = QComboBox()
+        for c in color_choices:
+            self.dist_color_combo.addItem(c.capitalize(), c)
+        self.dist_color_combo.setCurrentText("Yellow")
+        self.dist_color_combo.currentIndexChanged.connect(self._on_overlay_color_changed)
+        colors_form.addRow("Measure Line:", self.dist_color_combo)
+
         self.options_tabs.addTab(colors_widget, "Colors")
 
         self.class_color_group = QWidget()
@@ -763,8 +796,10 @@ class MainTab(QWidget):
             QTimer.singleShot(0, lambda: self.embedded_search.set_class_cmaps(self._get_class_cmaps()))
 
     def _on_display_unit_changed(self) -> None:
+        unit_label, scale = self.display_unit_combo.currentData()
+        if self._tools_tab is not None:
+            self._tools_tab.set_display_unit(unit_label, scale)
         if self.embedded_search.is_active:
-            unit_label, scale = self.display_unit_combo.currentData()
             QTimer.singleShot(0, lambda: self.embedded_search.set_display_unit(unit_label, scale))
 
     def _on_point_size_changed(self, value: int) -> None:
@@ -776,14 +811,15 @@ class MainTab(QWidget):
         self.embedded_search.marker_color = self.marker_color_combo.currentData()
         self.embedded_search.peak_color = self.peak_color_combo.currentData()
         self.embedded_search.path_color = self.path_color_combo.currentData()
+        self.embedded_search.dist_color = self.dist_color_combo.currentData()
         if self.embedded_search.is_active:
-            # Re-render to apply pick color (needs new enable_point_picking)
             self.embedded_search._preserve_camera = True
-            QTimer.singleShot(0, lambda: self.embedded_search._render())
+            QTimer.singleShot(0, self.embedded_search._render)
 
     def _on_clear_overlays(self) -> None:
         self.embedded_search.clear_overlays()
         self._clear_result_fields()
+        self._update_undo_redo_btns()
 
     def _on_max_points_changed(self, value: int) -> None:
         if self.embedded_search.is_active:
@@ -811,14 +847,21 @@ class MainTab(QWidget):
 
     def _build_action_group(self) -> QWidget:
         widget = QWidget()
-        layout = QHBoxLayout(widget)
+        layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(4)
 
         self.analyze_btn = QPushButton("Load")
         self.analyze_btn.setMinimumHeight(36)
-        self.analyze_btn.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.analyze_btn.setStyleSheet("font-weight: bold; font-size: 14px; background-color: #2a5a2a; color: white;")
         self.analyze_btn.clicked.connect(self._on_analyze)
         layout.addWidget(self.analyze_btn)
+
+        self.restart_btn = QPushButton("Restart")
+        self.restart_btn.setToolTip("Unload data and return to start screen")
+        self.restart_btn.setStyleSheet("background-color: #6b2222; color: white;")
+        self.restart_btn.clicked.connect(self._on_restart)
+        layout.addWidget(self.restart_btn)
 
         return widget
 
@@ -913,7 +956,12 @@ class MainTab(QWidget):
         """Search mode: data loaded, render into embedded viewer."""
         self.analyze_btn.setEnabled(True)
         self.analyze_btn.setText("Load")
-        self._last_crs_name = crs_info.source if crs_info else ""
+        if crs_info and crs_info.crs is not None:
+            self._last_crs_name = str(crs_info.crs.name)
+        elif crs_info:
+            self._last_crs_name = crs_info.source
+        else:
+            self._last_crs_name = ""
 
         # Populate classification color dropdowns from detected classes
         import numpy as np
@@ -940,9 +988,15 @@ class MainTab(QWidget):
             max_points=self.max_points_spin.value(),
         )
 
+        self.embedded_search.set_point_size(self.point_size_spin.value())
         self._set_search_controls(True)
         self._update_mode_label()
         self._log(f"Loaded {cloud.n_points:,} points. Click to select.")
+
+        # Point save dialogs at the LAZ file directory
+        paths = self._get_las_paths()
+        if paths and self._tools_tab is not None:
+            self._tools_tab._default_save_dir = str(Path(paths[0]).parent)
 
     def _on_query_finished(self, result: object) -> None:
         self.analyze_btn.setEnabled(True)
@@ -975,6 +1029,9 @@ class MainTab(QWidget):
         self.done_btn.setEnabled(enabled)
         self.reselect_btn.setEnabled(enabled)
         self.cancel_btn.setEnabled(enabled)
+        self.measure_btn.setEnabled(enabled)
+        if not enabled:
+            self.measure_btn.setChecked(False)
 
     def _update_mode_label(self) -> None:
         if not self.embedded_search.is_active:
@@ -1013,6 +1070,7 @@ class MainTab(QWidget):
         self._last_select_type = "Peak"
         self._saved_select_type = "Peak"
         self.embedded_search.find_peak()
+        self._update_undo_redo_btns()
 
     def _on_find_saddle(self) -> None:
         self._last_select_type = "Saddle"
@@ -1026,16 +1084,57 @@ class MainTab(QWidget):
         self._manual_peak_b = None
         self._peak_select_mode = False
         self.select_peaks_btn.setChecked(False)
+        self._update_undo_redo_btns()
+
+    def _run_measure(self) -> None:
+        a = self._measure_a
+        b = self._measure_b
+        if a is None or b is None:
+            return
+        self.embedded_search.measure_distance(a, b)
+        self._measure_a = None
+        self._measure_b = None
+        self._measure_mode = False
+        self.measure_btn.setChecked(False)
+        self._update_undo_redo_btns()
+
+    def _on_undo(self) -> None:
+        if self.embedded_search.undo():
+            self._log("Undo.\n")
+        self._update_undo_redo_btns()
+
+    def _on_redo(self) -> None:
+        if self.embedded_search.redo():
+            self._log("Redo.\n")
+        self._update_undo_redo_btns()
+
+    def _update_undo_redo_btns(self) -> None:
+        self.undo_btn.setEnabled(self.embedded_search.can_undo)
+        self.redo_btn.setEnabled(self.embedded_search.can_redo)
 
     def _on_select_peaks_toggled(self, checked: bool) -> None:
         self._peak_select_mode = checked
         if checked:
+            self._measure_mode = False
+            self.measure_btn.setChecked(False)
             self._manual_peak_a = None
             self._manual_peak_b = None
             self._log("Peak selection mode: click Peak A, then Peak B, then Find Saddle")
         else:
             self._manual_peak_a = None
             self._manual_peak_b = None
+
+    def _on_measure_toggled(self, checked: bool) -> None:
+        self._measure_mode = checked
+        if checked:
+            self._peak_select_mode = False
+            self.select_peaks_btn.setChecked(False)
+            self._measure_a = None
+            self._measure_b = None
+            self._log("Measure mode: click Point A, then Point B")
+        else:
+            self._measure_a = None
+            self._measure_b = None
 
     def _on_zoom(self) -> None:
         scale = 1.0 / self.zoom_spin.value()
@@ -1050,9 +1149,9 @@ class MainTab(QWidget):
     def _on_done(self) -> None:
         result = self.embedded_search.done()
         if result is not None:
-            self._set_search_controls(False)
             self._update_mode_label()
             self.exag_slider.setValue(10)  # Reset to 1.0x
+            self._update_undo_redo_btns()
 
     def _on_cancel(self) -> None:
         self.embedded_search.cancel()
@@ -1061,6 +1160,39 @@ class MainTab(QWidget):
         self._update_mode_label()
         self.viewer_stack.setCurrentIndex(0)
         self._log("Search cancelled.\n")
+
+    def _on_restart(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Restart",
+            "Are you sure you want to restart? All loaded data, results, "
+            "and overlays will be cleared.",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Ok:
+            return
+
+        self.embedded_search.cancel()
+        self._set_search_controls(False)
+        self.find_saddle_btn.setEnabled(False)
+        self._update_mode_label()
+        self._clear_result_fields()
+        self.file_list.clear()
+
+        # Re-randomize the background image
+        bg_files = sorted(self._bg_dir.glob("background_*.png"))
+        if bg_files:
+            bg_path = random.choice(bg_files)
+            self._placeholder.setStyleSheet(
+                f"QFrame#placeholder {{ "
+                f"  border-image: url({bg_path.as_posix()}) 0 0 0 0 stretch stretch; "
+                f"  border: 1px solid #444; border-radius: 4px; "
+                f"}}"
+            )
+
+        self.viewer_stack.setCurrentIndex(0)
+        self._log("Session restarted.\n")
 
     def _on_exag_changed(self, value: int) -> None:
         factor = value / 10.0
@@ -1088,6 +1220,18 @@ class MainTab(QWidget):
                 self._log("Peak B set. Finding saddle...\n")
                 self._on_find_saddle()
                 return
+        elif msg.startswith("Selected:") and self._measure_mode:
+            es = self.embedded_search
+            latlonz = (es._selected_lat, es._selected_lon, es._selected_z)
+            if self._measure_a is None:
+                self._measure_a = latlonz
+                self._log("Point A set. Now click Point B.\n")
+                return
+            elif self._measure_b is None:
+                self._measure_b = latlonz
+                self._log("Point B set. Measuring...\n")
+                self._run_measure()
+                return
         elif msg.startswith("Selected:"):
             self._last_select_type = "Manual"
         self._log(msg + "\n")
@@ -1114,10 +1258,11 @@ class MainTab(QWidget):
         self.result_elev_edit.clear()
         self.result_lat_edit.clear()
         self.result_lon_edit.clear()
-        self.result_code_edit.clear()
         self.result_units_edit.clear()
         self.result_crs_edit.clear()
         self.result_type_edit.clear()
+        self._last_result_string = ""
+        self.save_to_notes_btn.setEnabled(False)
 
     def _display_result(self, result: object) -> None:
         if result is None:
@@ -1129,22 +1274,30 @@ class MainTab(QWidget):
         # Populate result fields
         if result.classification is not None:
             cls_name = ASPRS_CLASSIFICATION_NAMES.get(result.classification, f"Class {result.classification}")
-            self.result_class_edit.setText(cls_name)
+            cls_display = f"{cls_name} ({result.classification})"
         else:
-            self.result_class_edit.setText("N/A")
+            cls_display = "N/A"
+        self.result_class_edit.setText(cls_display)
 
         unit_label, unit_scale = self.display_unit_combo.currentData()
-        self.result_elev_edit.setText(f"{result.elevation_m * unit_scale:,.2f}")
+        elev_display = f"{result.elevation_m * unit_scale:,.2f}"
+        self.result_elev_edit.setText(elev_display)
         self.result_lat_edit.setText(f"{result.location_deg[0]:.6f}")
         self.result_lon_edit.setText(f"{result.location_deg[1]:.6f}")
 
         # Second row
-        self.result_code_edit.setText(
-            str(result.classification) if result.classification is not None else "N/A"
-        )
+        select_type = self._last_select_type or "Manual"
         self.result_units_edit.setText(unit_label)
         self.result_crs_edit.setText(self._last_crs_name)
-        self.result_type_edit.setText(self._last_select_type or "Manual")
+        self.result_type_edit.setText(select_type)
+
+        # Build formatted result string for Save to Notes
+        self._last_result_string = (
+            f"Result ({select_type}): {elev_display} {unit_label}, "
+            f"{result.location_deg[0]:.6f},{result.location_deg[1]:.6f}, "
+            f"Classification: {cls_display}, CRS: {self._last_crs_name}"
+        )
+        self.save_to_notes_btn.setEnabled(True)
 
         # Log to terminal (always both units)
         self._log(
@@ -1153,5 +1306,8 @@ class MainTab(QWidget):
             f"at ({result.location_deg[0]:.6f}, {result.location_deg[1]:.6f})"
         )
         if self._tools_tab is not None:
-            self._tools_tab.set_last_result_ft(result.elevation_ft)
+            self._tools_tab.set_last_result(result.elevation_m * unit_scale)
 
+    def _on_save_to_notes(self) -> None:
+        if self._last_result_string and self._tools_tab is not None:
+            self._tools_tab.append_note(self._last_result_string)  # type: ignore[union-attr]

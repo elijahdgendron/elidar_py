@@ -136,7 +136,7 @@ def _load_and_merge(
     all_z_m: list[np.ndarray] = []
     all_cls: list[np.ndarray] = []
     all_int: list[np.ndarray] = []
-    single_crs: CrsInfo | None = None
+    first_crs: CrsInfo | None = None
 
     for p in paths:
         crs_info = resolve_crs(p, dem_path=options.dem_path, force_unit=options.force_unit)
@@ -167,9 +167,8 @@ def _load_and_merge(
         else:
             all_int.append(np.zeros(n, dtype=np.uint16))
 
-        # For single-file case, keep the original CRS for display
-        if len(paths) == 1:
-            single_crs = crs_info
+        if first_crs is None:
+            first_crs = crs_info
 
     lat = np.concatenate(all_lat)
     lon = np.concatenate(all_lon)
@@ -186,12 +185,12 @@ def _load_and_merge(
     )
 
     # Z is always meters after merge; track original unit for axis labeling
-    original_is_foot = single_crs.is_foot if single_crs is not None else False
+    original_is_foot = first_crs.is_foot if first_crs is not None else False
     display_crs = CrsInfo(
-        crs=None,
+        crs=first_crs.crs if first_crs is not None else None,
         unit_name="metre",
         is_geographic=True,
-        source=single_crs.source if single_crs is not None else "merged",
+        source=first_crs.source if first_crs is not None else "merged",
     )
     display_crs._original_is_foot = original_is_foot
 

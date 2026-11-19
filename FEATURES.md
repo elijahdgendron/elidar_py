@@ -10,16 +10,16 @@ ELiDAR_py is a desktop application for manually analyzing LiDAR point cloud data
 
 ```
 +------------------+----------------------------------------------------------+
-| Data Files       | [View: 3D|Top|Clear]  status text  [Util: Peak|Saddle..] |
-| Query Options    |                                                          |
-| Display Options  |              3D LiDAR Viewer                     Z  Color|
-|   [Basic]        |              (pyvista embedded)                   Exag Focus|
-|   [Classifications]                                                  |   |  |
+| Data Files       | [View: 3D|Top|Clear] status text                         |
+| Query Options    |    [Util: Auto Peak|Auto Saddle|Manual Saddle]           |
+| Display Options  |    [      Measure |Undo        |Redo         ]           |
+|   [Basic]        |              3D LiDAR Viewer                     Z  Color|
+|   [Classifications]             (pyvista embedded)                  Exag Focus|
 |   [Colors]       |                                                   |   |  |
 |                  +----------------------------------------------------------+
 | [    Load    ]   | [Zoom] [Fine] [Done] [Reselect] [Cancel] [Screenshot]   |
-|                  | Result: Class | Elev | Lat | Lon                         |
-|                  |         Code | Units | CRS | Type                        |
+| [   Restart  ]   | Result: Elev | Unit | Lat | Lon                         |
+|                  |         Class | CRS | Type | [Save to Notes]             |
 |                  | Log                                                      |
 +------------------+----------------------------------------------------------+
 ```
@@ -51,7 +51,7 @@ ELiDAR_py is a desktop application for manually analyzing LiDAR point cloud data
 - **Click** on a point to select it
 - The yellow status text shows classification, coordinates, and elevation
 - Selected points persist through zoom operations
-- **[Reselect (R)]**: Restore the last Find Peak / Auto Saddle selection after accidentally clicking away
+- **[Reselect (R)]**: Restore the last Auto Peak / Auto Saddle selection after accidentally clicking away
 
 ### Zooming
 - **[Zoom (Z)]**: Coarse zoom -- halves the view radius (default 2x)
@@ -61,12 +61,13 @@ ELiDAR_py is a desktop application for manually analyzing LiDAR point cloud data
 - Both zoom factors are adjustable in Display Options
 
 ### Accepting a Selection
-- **[Done (D)]**: Accept the current point, reset to full view with annotation
+- **[Done (D)]**: Accept the current point, reset to full view with a persistent label
+- Multiple results can be accepted in a single session -- each Done adds a labeled marker to the full view
 - **[Cancel (Esc)]**: Discard and return to the placeholder
 
 ---
 
-## Find Peak
+## Auto Peak
 
 Located in the **Util** toolbar group. Automatically selects the highest visible point in the current view.
 
@@ -108,6 +109,39 @@ You don't need to click the exact summits -- any points on opposite sides of the
 
 ---
 
+## Measure
+
+Click **[Measure]** to enter two-click mode:
+1. Click Point A
+2. Click Point B
+3. A line is drawn between the points with horizontal and vertical distances annotated
+4. Multiple measurements can be active simultaneously -- each new measurement adds to the view
+
+Distances are shown in the current display unit (feet or meters). The annotation on the plot shows values without units; the log includes units. The line color is configurable in Display Options > Colors.
+
+---
+
+## Undo / Redo
+
+Located in the **Util** toolbar group. Each overlay operation (Auto Peak, Auto Saddle, Manual Saddle, Measure, Done) pushes a snapshot onto the undo stack.
+
+- **[Undo]**: Reverts the last overlay operation
+- **[Redo]**: Re-applies the last undone operation
+- Performing a new operation after an undo clears the redo stack
+- Both stacks are cleared on Load, Clear, and Cancel
+
+---
+
+## Restart
+
+Located below the **Load** button in the left panel.
+
+- Unloads all data and clears the file list, results, and overlays
+- Returns to the start screen with a new randomly-selected background image
+- Shows a confirmation dialog before proceeding
+
+---
+
 ## Display Options
 
 ### Basic Tab
@@ -116,7 +150,7 @@ You don't need to click the exact summits -- any points on opposite sides of the
 | Coarse Zoom | Zoom factor for the Zoom button (default 2.0x) |
 | Fine Zoom | Zoom factor for the Fine button (default 1.3x) |
 | Display In | Feet (international), Feet (US Survey), or Meters |
-| Point Size | LiDAR point rendering size (1-20, default 15) |
+| Point Size | LiDAR point rendering size (1-20, default 10) |
 | Max Points | Maximum points per classification to display (1k-500k, default 50k) |
 | Background | Black (default), Gray, or White |
 | Force Unit | Override CRS unit detection (Auto/Feet/Meters) |
@@ -143,6 +177,7 @@ Configurable overlay colors:
 | Selection | Magenta | The persistent selection marker |
 | Peak Markers | Lime | Reference peaks for saddle analysis |
 | Saddle Path | Cyan | The minimax path line |
+| Measure Line | Yellow | The distance measurement line |
 
 ---
 
@@ -168,30 +203,32 @@ The colorbars share the same elevation range for consistent comparison.
 
 ## Result Fields
 
-After selecting a point (manually, via Find Peak, or via saddle analysis):
+After selecting a point (manually, via Auto Peak, or via saddle analysis):
 
 | Field | Description |
 |-------|-------------|
-| Class | ASPRS classification name (Ground, Snow/Ice, etc.) |
 | Elev | Elevation in the current display unit |
+| Unit | Current display unit (ft (international), ft (US survey), m) |
 | Lat | Latitude in degrees |
 | Lon | Longitude in degrees |
-| Code | Numeric classification code (2, 21, etc.) |
-| Units | Current display unit (ft (international), ft (US survey), m) |
-| CRS | Source of coordinate reference system (laz_vlr, dem, merged) |
+| Class | ASPRS classification name and code, e.g. "Ground (2)" |
+| CRS | Coordinate reference system name from the source file |
 | Type | How the point was selected (Manual, Peak, Saddle) |
+
+**[Save to Notes]** appends the current result as a single formatted line to the Scratch Notes on the Notes tab.
 
 ---
 
-## Tools Tab
+## Notes Tab
 
 ### Prominence Calculator
-Enter peak and saddle elevations in feet to compute prominence:
-- **Last Result -> Peak / Saddle**: Copy the most recent query result
+Enter peak and saddle elevations to compute prominence:
+- Labels and results use the current **Display In** unit (feet, US survey feet, or meters)
+- **Last Result -> Peak / Saddle**: Copy the most recent query result in the current display unit
 - **Calculate**: Computes peak - saddle elevation
 
 ### Scratch Notes
-Text editor for taking notes during analysis. Save to a .txt file.
+Text editor for taking notes during analysis. Results can be appended here via the **[Save to Notes]** button in the result fields. Save to a .txt file -- the save dialog defaults to the directory containing the loaded LAZ files.
 
 ---
 
@@ -202,14 +239,14 @@ Text editor for taking notes during analysis. Save to a .txt file.
 | Z | Coarse zoom |
 | F | Fine zoom |
 | D / Enter | Accept selection (Done) |
-| R | Reselect last Find Peak / Saddle result |
+| R | Reselect last Auto Peak / Saddle result |
 | Escape | Cancel |
 
 ---
 
 ## Screenshot
 
-Click **[Screenshot]** to save the current 3D view as a PNG file.
+Click **[Screenshot]** to save the current 3D view as a PNG file. The save dialog defaults to the directory containing the loaded LAZ files.
 
 ---
 
@@ -239,3 +276,44 @@ Statistical outlier removal (Open3D) followed by voxel deduplication. Both opera
 
 ### Multi-Tile Support
 Multiple LAZ files can be loaded simultaneously. Each is read with its own CRS, reprojected to lat/lon independently, and Z normalized to meters before merging. No separate "combine" step needed.
+
+---
+
+## Building a Windows Executable
+
+ELiDAR can be packaged as a standalone Windows .exe using [Nuitka](https://nuitka.net/). The resulting executable runs on any Windows 10/11 x64 machine with no Python installation required.
+
+### Prerequisites
+
+- **Windows** -- the build must run on Windows (no cross-compilation)
+- **Python 3.10 or 3.11** -- recommended for Open3D compatibility
+- **A C compiler** -- Nuitka uses MSVC (Visual Studio Build Tools) or MinGW64. MSVC is recommended; Nuitka will offer to download MinGW64 automatically if no compiler is found.
+
+### Steps
+
+```bash
+# 1. Install build dependencies
+pip install -e ".[gui,build]"
+
+# 2. Run the build script
+python build_exe.py
+```
+
+The build takes 10-30 minutes on the first run (Nuitka compiles Python to C, then compiles the C code). Subsequent builds are faster thanks to Nuitka's compilation cache.
+
+### Output
+
+- `dist/ELiDAR.exe` -- a single standalone executable (expected 500MB-1GB due to VTK and Open3D)
+- Double-click to launch the GUI, or run from a terminal for CLI mode:
+
+```bash
+ELiDAR.exe                    # Launch GUI
+ELiDAR.exe --help             # Show CLI help
+ELiDAR.exe peak --lat 48.77 --lon -121.81 --las file.laz
+```
+
+### Troubleshooting
+
+- If the build fails with missing modules, check that all dependencies are installed: `pip install -e ".[gui]"`
+- If the .exe crashes on launch, try building with `--standalone` instead of `--onefile` (edit `build_exe.py`) -- this produces a folder instead of a single file but avoids temp-extraction issues
+- Open3D requires Python 3.10 or 3.11. If using a newer Python version, Open3D may not be installable

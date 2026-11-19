@@ -44,7 +44,7 @@ class ELiDARApp(QMainWindow):
         self.main_tab.set_tools_tab(self.tools_tab)
 
         self.tabs.addTab(self.main_tab, "Analysis")
-        self.tabs.addTab(self.tools_tab, "Tools")
+        self.tabs.addTab(self.tools_tab, "Notes")
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.settings.setValue("geometry", self.saveGeometry())

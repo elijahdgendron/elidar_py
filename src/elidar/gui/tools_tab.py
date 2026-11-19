@@ -1,4 +1,4 @@
-"""Tools tab: scratch notes and prominence calculator."""
+"""Notes tab: scratch notes and prominence calculator."""
 
 from __future__ import annotations
 
@@ -20,16 +20,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from elidar.core.types import M2FT
-
 logger = logging.getLogger(__name__)
 
 
 class ToolsTab(QWidget):
-    """Tools tab with prominence calculator and scratch notepad."""
+    """Notes tab with prominence calculator and scratch notepad."""
 
     def __init__(self) -> None:
         super().__init__()
+        self._unit_label: str = "ft (international)"
+        self._unit_scale: float = 1.0  # multiply meters to get display unit
+        self._last_elevation_display: float | None = None
+        self._default_save_dir: str = os.path.expanduser("~")
+
         layout = QVBoxLayout(self)
 
         layout.addWidget(self._build_prominence_group())
@@ -43,11 +46,13 @@ class ToolsTab(QWidget):
 
         self.peak_elev_edit = QLineEdit()
         self.peak_elev_edit.setPlaceholderText("ft")
-        form.addRow("Peak (ft):", self.peak_elev_edit)
+        self._peak_row_label = QLabel("Peak (ft):")
+        form.addRow(self._peak_row_label, self.peak_elev_edit)
 
         self.saddle_elev_edit = QLineEdit()
         self.saddle_elev_edit.setPlaceholderText("ft")
-        form.addRow("Saddle (ft):", self.saddle_elev_edit)
+        self._saddle_row_label = QLabel("Saddle (ft):")
+        form.addRow(self._saddle_row_label, self.saddle_elev_edit)
 
         self.prom_label = QLabel("")
         self.prom_label.setStyleSheet("font-weight: bold; font-size: 13px;")
@@ -97,12 +102,35 @@ class ToolsTab(QWidget):
 
     # --- Prominence ---
 
-    def set_last_result_ft(self, elevation_ft: float) -> None:
+    def set_display_unit(self, unit_label: str, unit_scale: float) -> None:
+        """Update the display unit used by the prominence calculator.
+
+        :param unit_label: Short unit string (e.g. "ft (international)", "m").
+        :param unit_scale: Multiply meters by this to get the display unit.
+        """
+        self._unit_label = unit_label
+        self._unit_scale = unit_scale
+        short = self._short_unit()
+        self._peak_row_label.setText(f"Peak ({short}):")
+        self._saddle_row_label.setText(f"Saddle ({short}):")
+        self.peak_elev_edit.setPlaceholderText(short)
+        self.saddle_elev_edit.setPlaceholderText(short)
+
+    def set_last_result(self, elevation_display: float) -> None:
         """Store the last query result elevation for copy buttons.
 
-        :param elevation_ft: Elevation in feet from the last query.
+        :param elevation_display: Elevation in the current display unit.
         """
-        self._last_elevation_ft = elevation_ft
+        self._last_elevation_display = elevation_display
+
+    def _short_unit(self) -> str:
+        """Return a compact unit abbreviation for labels."""
+        label = self._unit_label.lower()
+        if "survey" in label:
+            return "ft-us"
+        if "ft" in label or "feet" in label or "foot" in label:
+            return "ft"
+        return "m"
 
     def _on_calc_prominence(self) -> None:
         try:
@@ -112,20 +140,30 @@ class ToolsTab(QWidget):
             self.prom_label.setText("Enter valid numbers")
             return
 
-        prom_ft = peak - saddle
-        prom_m = prom_ft / M2FT
-        self.prom_label.setText(f"{prom_ft:,.2f} ft  ({prom_m:,.2f} m)")
+        prom = peak - saddle
+        short = self._short_unit()
+        self.prom_label.setText(f"{prom:,.2f} {short}")
 
     def _copy_to_prominence(self, target: str) -> None:
-        if not hasattr(self, "_last_elevation_ft"):
+        if self._last_elevation_display is None:
             return
-        val = f"{self._last_elevation_ft:.2f}"
+        val = f"{self._last_elevation_display:.2f}"
         if target == "peak":
             self.peak_elev_edit.setText(val)
         else:
             self.saddle_elev_edit.setText(val)
 
     # --- Notes ---
+
+    def append_note(self, text: str) -> None:
+        """Append a line to the scratch notes.
+
+        :param text: Text to append.
+        """
+        current = self.notes_edit.toPlainText()
+        if current and not current.endswith("\n"):
+            self.notes_edit.append("")
+        self.notes_edit.append(text)
 
     def _on_save_notes(self) -> None:
         text = self.notes_edit.toPlainText().strip()
@@ -134,7 +172,7 @@ class ToolsTab(QWidget):
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Notes", os.path.expanduser("~"),
+            self, "Save Notes", str(Path(self._default_save_dir) / "elidar_notes.txt"),
             "Text Files (*.txt);;All Files (*)",
         )
         if path:

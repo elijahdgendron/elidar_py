@@ -434,7 +434,7 @@ class EmbeddedSearch:
         self._unit_scale: float = 1.0
         self._z_exaggeration: float = 1.0
         self._color_stretch: float = 1.0
-        self._point_size: int = 5
+        self._point_size: int = 10
         self._font_color: str = "white"
         self._base_plot_z: np.ndarray | None = None
         self._polydatas: list[pv.PolyData] = []
@@ -446,11 +446,16 @@ class EmbeddedSearch:
         self._peak_a_latlon: tuple[float, float] | None = None
         self._peak_b_latlon: tuple[float, float] | None = None
         self._saved_selection: tuple[float, float, float] | None = None
+        self._dist_lines: list[tuple[tuple[float, float, float], tuple[float, float, float]]] = []
+        self._accepted_results: list[PickResult] = []
+        self._undo_stack: list[dict] = []
+        self._redo_stack: list[dict] = []
         # Configurable colors
         self.marker_color: str = "magenta"
         self.pick_color: str = "red"
         self.peak_color: str = "lime"
         self.path_color: str = "cyan"
+        self.dist_color: str = "yellow"
         self._polydata: pv.PolyData | None = None
 
     @property
@@ -505,6 +510,7 @@ class EmbeddedSearch:
         data_radius_m = max(lat_span_m, lon_span_m) / 2
         config_radius_m = options.query_radius_deg / 2 * _M_PER_DEG_LAT
         self._zoom_radius_m = min(config_radius_m, data_radius_m)
+        self._initial_zoom_radius_m = self._zoom_radius_m
         self._picked_point = None
         self._pick_idx = None
         self._selected_lat = None
@@ -513,6 +519,10 @@ class EmbeddedSearch:
         self._path_latlons = None
         self._peak_a_latlon = None
         self._peak_b_latlon = None
+        self._dist_lines = []
+        self._accepted_results = []
+        self._undo_stack = []
+        self._redo_stack = []
         self._active = True
         self._max_points = max_points
         self._preserve_camera = False
@@ -554,14 +564,14 @@ class EmbeddedSearch:
             self._working_cloud.n_points,
         )
 
-        # Clear saddle overlays — indices are stale after zoom resamples
+        # Clear overlays — indices are stale after zoom resamples
         self._path_latlons = None
         self._peak_a_latlon = None
         self._peak_b_latlon = None
+        self._dist_lines = []
 
         self._preserve_camera = True
         self._render()
-        self._restore_selection()
 
     def clear_overlays(self) -> None:
         """Remove all overlay markers, path, and selections. Terrain stays."""
@@ -577,15 +587,81 @@ class EmbeddedSearch:
         self._peak_a_latlon = None
         self._peak_b_latlon = None
         # Remove named actors
-        try:
-            self.plotter.remove_actor("saddle_path")
-        except (KeyError, ValueError):
-            pass
-        try:
-            self.plotter.remove_actor("status")
-        except (KeyError, ValueError):
-            pass
+        for name in ("saddle_path", "status"):
+            try:
+                self.plotter.remove_actor(name)
+            except (KeyError, ValueError):
+                pass
+        for i in range(len(self._dist_lines)):
+            for prefix in ("dist_line_", "dist_label_"):
+                try:
+                    self.plotter.remove_actor(f"{prefix}{i}")
+                except (KeyError, ValueError):
+                    pass
+        self._dist_lines = []
+        for i in range(len(self._accepted_results)):
+            for prefix in ("accepted_marker_", "accepted_label_"):
+                try:
+                    self.plotter.remove_actor(f"{prefix}{i}")
+                except (KeyError, ValueError):
+                    pass
+        self._accepted_results = []
+        self._undo_stack = []
+        self._redo_stack = []
         self.plotter.render()
+
+    def _snapshot(self) -> dict:
+        return {
+            "path_latlons": self._path_latlons,
+            "peak_a": self._peak_a_latlon,
+            "peak_b": self._peak_b_latlon,
+            "dist_lines": list(self._dist_lines),
+            "accepted": list(self._accepted_results),
+        }
+
+    def _restore_snapshot(self, state: dict) -> None:
+        self._path_latlons = state["path_latlons"]
+        self._peak_a_latlon = state["peak_a"]
+        self._peak_b_latlon = state["peak_b"]
+        self._dist_lines = state["dist_lines"]
+        self._accepted_results = state["accepted"]
+        self._preserve_camera = True
+        self._render()
+
+    def _push_undo(self) -> None:
+        """Snapshot the current overlay state onto the undo stack."""
+        self._undo_stack.append(self._snapshot())
+        self._redo_stack.clear()
+
+    def undo(self) -> bool:
+        """Pop the last overlay state and restore it.
+
+        :return: True if something was undone, False if stack empty.
+        """
+        if not self._undo_stack:
+            return False
+        self._redo_stack.append(self._snapshot())
+        self._restore_snapshot(self._undo_stack.pop())
+        return True
+
+    def redo(self) -> bool:
+        """Re-apply the last undone operation.
+
+        :return: True if something was redone, False if stack empty.
+        """
+        if not self._redo_stack:
+            return False
+        self._undo_stack.append(self._snapshot())
+        self._restore_snapshot(self._redo_stack.pop())
+        return True
+
+    @property
+    def can_undo(self) -> bool:
+        return len(self._undo_stack) > 0
+
+    @property
+    def can_redo(self) -> bool:
+        return len(self._redo_stack) > 0
 
     def reselect(self) -> None:
         """Restore the last Find Peak / Find Saddle selection."""
@@ -598,6 +674,7 @@ class EmbeddedSearch:
         """Select the highest visible point and highlight it."""
         if not self._active or self._display_cloud is None:
             return
+        self._push_undo()
 
         cloud = self._display_cloud
 
@@ -669,6 +746,7 @@ class EmbeddedSearch:
 
         if not self._active or self._display_cloud is None:
             return
+        self._push_undo()
 
         cloud = self._display_cloud
 
@@ -886,17 +964,23 @@ class EmbeddedSearch:
         return mx, my, mz
 
     def _show_peak_markers_ll(self) -> None:
-        """Show green markers at peak lat/lon positions."""
+        """Show upward arrow markers at peak lat/lon positions."""
         if self._peak_a_latlon is None or self._peak_b_latlon is None:
             return
+        bump = _z_bump(self._base_plot_z)
+        arrow_h = bump * 4
         for latlon in (self._peak_a_latlon, self._peak_b_latlon):
             mx, my, mz = self._latlon_to_display(*latlon)
-            marker = pv.PolyData(np.array([[mx, my, mz]]))
-            a = self.plotter.add_points(
-                marker,
+            cone = pv.Cone(
+                center=(mx, my, mz + arrow_h * 0.5),
+                direction=(0, 0, 1),
+                height=arrow_h,
+                radius=arrow_h * 0.3,
+                resolution=20,
+            )
+            a = self.plotter.add_mesh(
+                cone,
                 color=self.peak_color,
-                point_size=12,
-                render_points_as_spheres=True,
                 show_scalar_bar=False,
             )
             _always_on_top(a)
@@ -921,6 +1005,93 @@ class EmbeddedSearch:
         )
         _always_on_top(actor)
         self.plotter.render()
+
+    def _show_dist_line_ll(self) -> None:
+        """Render all distance measurement lines and labels from stored positions."""
+        if not self._dist_lines:
+            return
+        for i, (pt_a, pt_b) in enumerate(self._dist_lines):
+            lat_a, lon_a, z_a = pt_a
+            lat_b, lon_b, z_b = pt_b
+            pa = self._latlon_to_display(lat_a, lon_a)
+            pb = self._latlon_to_display(lat_b, lon_b)
+            pts = np.array([pa, pb])
+            line = pv.PolyData(pts, lines=np.array([2, 0, 1]))
+            actor = self.plotter.add_mesh(
+                line,
+                color=self.dist_color,
+                line_width=4,
+                show_scalar_bar=False,
+                name=f"dist_line_{i}",
+            )
+            _always_on_top(actor)
+
+            dlat_m = (lat_b - lat_a) * _M_PER_DEG_LAT
+            m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians((lat_a + lat_b) / 2))
+            dlon_m = (lon_b - lon_a) * m_per_deg_lon
+            h_dist_m = np.sqrt(dlat_m ** 2 + dlon_m ** 2)
+            v_dist_m = abs(z_b - z_a)
+
+            s = self._unit_scale
+            h_display = h_dist_m * s
+            v_display = v_dist_m * s
+
+            mid = (pts[0] + pts[1]) / 2
+            bump = _z_bump(self._base_plot_z)
+            mid[2] += bump * 2
+
+            label_pt = pv.PolyData(mid.reshape(1, 3))
+            label_pt["labels"] = [f" H: {h_display:.1f}  V: {v_display:.1f}"]
+            self.plotter.add_point_labels(
+                label_pt,
+                "labels",
+                font_size=12,
+                text_color=self.dist_color,
+                bold=True,
+                shadow=True,
+                shape=None,
+                show_points=False,
+                name=f"dist_label_{i}",
+            )
+        self.plotter.render()
+
+    def measure_distance(
+        self,
+        point_a: tuple[float, float, float],
+        point_b: tuple[float, float, float],
+    ) -> None:
+        """Measure and display horizontal/vertical distance between two points.
+
+        :param point_a: (lat, lon, z_meters) of first point.
+        :param point_b: (lat, lon, z_meters) of second point.
+        """
+        self._push_undo()
+        self._dist_lines.append((point_a, point_b))
+
+        lat_a, lon_a, z_a = point_a
+        lat_b, lon_b, z_b = point_b
+
+        dlat_m = (lat_b - lat_a) * _M_PER_DEG_LAT
+        m_per_deg_lon = _M_PER_DEG_LAT * np.cos(np.radians((lat_a + lat_b) / 2))
+        dlon_m = (lon_b - lon_a) * m_per_deg_lon
+        h_dist_m = np.sqrt(dlat_m ** 2 + dlon_m ** 2)
+        v_dist_m = abs(z_b - z_a)
+
+        s = self._unit_scale
+        h_display = h_dist_m * s
+        v_display = v_dist_m * s
+
+        logger.info(
+            "Distance: H=%.1f %s, V=%.1f %s",
+            h_display, self._display_unit, v_display, self._display_unit,
+        )
+        if self.on_status:
+            self.on_status(
+                f"Distance: H={h_display:.1f} {self._display_unit}, "
+                f"V={v_display:.1f} {self._display_unit}"
+            )
+
+        self._show_dist_line_ll()
 
     def _restore_selection(self) -> None:
         """Re-highlight the persisted selection and saddle overlays after a re-render."""
@@ -950,9 +1121,11 @@ class EmbeddedSearch:
         self._show_selection_marker()
         self._show_selection_status()
 
-        # Re-draw saddle analysis overlays from stored lat/lon
+        # Re-draw overlays from stored lat/lon
         self._show_path_ll()
         self._show_peak_markers_ll()
+        self._show_dist_line_ll()
+        self._show_accepted_labels()
 
     def _show_selection_status(self) -> None:
         """Update the yellow status text for the current selection."""
@@ -988,12 +1161,18 @@ class EmbeddedSearch:
         my = (self._selected_lat - self._center_lat) * _M_PER_DEG_LAT * s
         mz = self._selected_z * s * self._z_exaggeration + _z_bump(self._base_plot_z)
 
-        marker = pv.PolyData(np.array([[mx, my, mz]]))
-        a2 = self.plotter.add_points(
-            marker,
+        bump = _z_bump(self._base_plot_z)
+        arrow_h = bump * 5
+        cone = pv.Cone(
+            center=(mx, my, mz + arrow_h * 0.5),
+            direction=(0, 0, 1),
+            height=arrow_h,
+            radius=arrow_h * 0.3,
+            resolution=20,
+        )
+        a2 = self.plotter.add_mesh(
+            cone,
             color=self.marker_color,
-            point_size=22,
-            render_points_as_spheres=True,
             show_scalar_bar=False,
         )
         _always_on_top(a2)
@@ -1040,46 +1219,90 @@ class EmbeddedSearch:
         if self.on_result:
             self.on_result(result)
 
-        # Re-render the full original cloud with the selected point highlighted
+        self._push_undo()
+        self._accepted_results.append(result)
+
+        # Clear selection state so _render's _restore_selection is a no-op
+        self._selected_lat = None
+        self._selected_lon = None
+        self._selected_z = None
+        self._picked_point = None
+        self._pick_idx = None
+        self._path_latlons = None
+        self._peak_a_latlon = None
+        self._peak_b_latlon = None
+        self._dist_lines = []
+        for a in self._marker_actors:
+            try:
+                self.plotter.remove_actor(a)
+            except (KeyError, ValueError):
+                pass
+        self._marker_actors = []
+
+        # Re-render the full original cloud with all accepted results labeled
         self._working_cloud = self._original_cloud
+        self._zoom_radius_m = self._initial_zoom_radius_m
         self._z_exaggeration = 1.0
         self._render()
-        self._add_selection_marker(result)
+        self._show_accepted_labels()
 
         return result
 
-    def _add_selection_marker(self, result: PickResult) -> None:
-        """Add a bright marker and annotation at the selected point."""
-        s = self._unit_scale
-        mx = (result.lon - self._center_lon) * self._m_per_deg_lon * s
-        my = (result.lat - self._center_lat) * _M_PER_DEG_LAT * s
-        mz = result.z * s * self._z_exaggeration + _z_bump(self._base_plot_z)
-
-        marker = pv.PolyData(np.array([[mx, my, mz]]))
-
-        if self._display_unit != "m":
-            elev_str = f"{result.z * M2FT:.1f} ft"
-        else:
-            elev_str = f"{result.z:.1f} m"
+    def _show_accepted_labels(self) -> None:
+        """Draw arrow markers and labels for all accepted results."""
+        if not self._accepted_results:
+            return
 
         from elidar.core.types import ASPRS_CLASSIFICATION_NAMES
-        cls_name = ""
-        if result.classification is not None:
-            cls_name = ASPRS_CLASSIFICATION_NAMES.get(result.classification, f"Class {result.classification}")
 
-        label = f" {cls_name}  {elev_str}" if cls_name else f" {elev_str}"
-        marker["labels"] = [label]
+        s = self._unit_scale
+        bump = _z_bump(self._base_plot_z)
+        arrow_h = bump * 5
 
-        self.plotter.add_point_labels(
-            marker,
-            "labels",
-            font_size=14,
-            text_color="magenta",
-            bold=True,
-            shadow=True,
-            shape=None,
-            show_points=False,
-        )
+        for i, result in enumerate(self._accepted_results):
+            mx = (result.lon - self._center_lon) * self._m_per_deg_lon * s
+            my = (result.lat - self._center_lat) * _M_PER_DEG_LAT * s
+            mz = result.z * s * self._z_exaggeration + _z_bump(self._base_plot_z)
+
+            cone = pv.Cone(
+                center=(mx, my, mz + arrow_h * 0.5),
+                direction=(0, 0, 1),
+                height=arrow_h,
+                radius=arrow_h * 0.3,
+                resolution=20,
+            )
+            self.plotter.add_mesh(
+                cone,
+                color=self.marker_color,
+                show_scalar_bar=False,
+                name=f"accepted_marker_{i}",
+            )
+
+            if self._display_unit != "m":
+                elev_str = f"{result.z * M2FT:.1f} ft"
+            else:
+                elev_str = f"{result.z:.1f} m"
+
+            cls_name = ""
+            if result.classification is not None:
+                cls_name = ASPRS_CLASSIFICATION_NAMES.get(
+                    result.classification, f"Class {result.classification}",
+                )
+
+            label = f" {cls_name}  {elev_str}" if cls_name else f" {elev_str}"
+            label_pt = pv.PolyData(np.array([[mx, my, mz + arrow_h]]))
+            label_pt["labels"] = [label]
+            self.plotter.add_point_labels(
+                label_pt,
+                "labels",
+                font_size=14,
+                text_color="magenta",
+                bold=True,
+                shadow=True,
+                shape=None,
+                show_points=False,
+                name=f"accepted_label_{i}",
+            )
         self.plotter.render()
 
     def set_max_points(self, max_points: int) -> None:
@@ -1106,6 +1329,10 @@ class EmbeddedSearch:
         self._path_latlons = None
         self._peak_a_latlon = None
         self._peak_b_latlon = None
+        self._dist_lines = []
+        self._accepted_results = []
+        self._undo_stack = []
+        self._redo_stack = []
         self._marker_actors = []
         self._polydata = None
         self._polydatas = []
@@ -1408,10 +1635,6 @@ class EmbeddedSearch:
             z_color=z_ax_color,
         )
 
-        # Terrain-style rotation: orbit around Z (Up) axis only,
-        # prevents flipping below the surface.
-        self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
-
         self.plotter.enable_point_picking(
             callback=self._on_pick,
             left_clicking=True,
@@ -1422,6 +1645,9 @@ class EmbeddedSearch:
             show_message=False,
             tolerance=0.025,
         )
+        # Terrain-style rotation AFTER point picking — enable_point_picking
+        # can reset the interactor style, so this must come last.
+        self.plotter.enable_terrain_style(mouse_wheel_zooms=True)
 
         if self._preserve_camera:
             # Compare the user's current camera distance to what a re-fit
@@ -1470,6 +1696,7 @@ class EmbeddedSearch:
             self.plotter.camera.azimuth = -60
         if self.on_render:
             self.on_render()
+        self._restore_selection()
         self.plotter.render()
 
     def _on_pick(self, point: np.ndarray) -> None:
